@@ -1,0 +1,14 @@
+[project]
+name = "comfyui-browser-load-image"
+description = "Enhanced Load Image/Video nodes for ComfyUI with visual thumbnail browser, hover preview, draggable/resizable/maximizable modal"
+version = "1.0.0"
+license = { file = "LICENSE" }
+requires-python = ">= 3.9"
+dependencies = ["opencv-python>=4.5.0"]
+
+[project.urls]
+Repository = "https://github.com/flashcol/ComfyUI_BrowserLoadImage"
+
+[tool.comfy]
+PublisherId = "flashcol"
+DisplayName = "ComfyUI Browser Load Image"

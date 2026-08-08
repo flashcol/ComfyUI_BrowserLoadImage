@@ -1,0 +1,10 @@
+tests/
+assets/
+.gitignore
+.gemini/
+.agents/
+ComfyUI_API参考手册.md
+ComfyUI插件开发技术规范.md
+IFLOW.md
+__pycache__/
+*.pyc
