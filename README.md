@@ -35,7 +35,7 @@ Search for `ComfyUI_BrowserLoadImage` in [ComfyUI Manager](https://github.com/lt
 
 ```bash
 cd ComfyUI/custom_nodes
-git clone https://github.com/YOUR_USERNAME/ComfyUI_BrowserLoadImage.git
+git clone https://github.com/flashcol/ComfyUI_BrowserLoadImage.git
 ```
 
 Restart ComfyUI after installation.
