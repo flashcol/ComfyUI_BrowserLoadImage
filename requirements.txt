@@ -1,0 +1,8 @@
+# ComfyUI Browser Load Image Plugin Dependencies
+# Most dependencies are already included with ComfyUI
+
+# Video processing dependency
+opencv-python>=4.5.0
+
+# Optional: for YAML configuration support (not required for basic functionality)
+# pyyaml>=5.4.0

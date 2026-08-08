@@ -1,0 +1,23 @@
+/* Browser Load Image 节点预览样式 */
+
+.browser-image-preview {
+    transition: all 0.2s ease;
+}
+
+.browser-image-preview:hover {
+    border-color: #666;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.browser-image-preview img {
+    transition: opacity 0.3s ease;
+}
+
+.browser-image-preview button:hover {
+    background-color: #555 !important;
+}
+
+.browser-image-preview button:active {
+    background-color: #666 !important;
+    transform: scale(0.95);
+}

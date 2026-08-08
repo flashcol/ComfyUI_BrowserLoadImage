@@ -1,0 +1,74 @@
+{
+  "name": "comfyui-browser-load-image",
+  "version": "1.0.0",
+  "description": "Enhanced Load Image node with browser interface for ComfyUI",
+  "main": "web/js/browser_image.js",
+  "scripts": {
+    "build": "npm run build-css && npm run build-js",
+    "build-css": "npm run css-minify",
+    "build-js": "npm run js-minify",
+    "css-minify": "cleancss -o web/css/browser_image.min.css web/css/browser_image.css",
+    "js-minify": "terser web/js/*.js -o web/js/browser_image.min.js --compress --mangle",
+    "dev": "npm run watch",
+    "watch": "parallelshell \"npm run watch-css\" \"npm run watch-js\"",
+    "watch-css": "nodemon --watch web/css --ext css --exec \"npm run css-minify\"",
+    "watch-js": "nodemon --watch web/js --ext js --exec \"npm run js-minify\"",
+    "lint": "eslint web/js/*.js",
+    "lint-fix": "eslint web/js/*.js --fix",
+    "test": "jest",
+    "serve": "http-server . -p 8080 -c-1"
+  },
+  "keywords": [
+    "comfyui",
+    "image-browser",
+    "stable-diffusion",
+    "ai",
+    "image-processing"
+  ],
+  "author": "ComfyUI Browser Load Image Plugin",
+  "license": "MIT",
+  "devDependencies": {
+    "clean-css-cli": "^5.6.2",
+    "eslint": "^8.57.0",
+    "http-server": "^14.1.1",
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.2",
+    "parallelshell": "^3.0.2",
+    "terser": "^5.26.0"
+  },
+  "dependencies": {},
+  "browserslist": [
+    "> 1%",
+    "last 2 versions",
+    "not dead",
+    "not ie <= 11"
+  ],
+  "eslintConfig": {
+    "env": {
+      "browser": true,
+      "es2021": true
+    },
+    "extends": "eslint:recommended",
+    "parserOptions": {
+      "ecmaVersion": 12,
+      "sourceType": "module"
+    },
+    "rules": {
+      "no-console": "warn",
+      "no-unused-vars": "error",
+      "prefer-const": "error",
+      "no-var": "error"
+    }
+  },
+  "jest": {
+    "testEnvironment": "jsdom",
+    "collectCoverageFrom": [
+      "web/js/**/*.js"
+    ],
+    "coverageReporters": [
+      "text",
+      "lcov",
+      "html"
+    ]
+  }
+}
