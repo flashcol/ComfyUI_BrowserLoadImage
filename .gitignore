@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 node_modules/
 .DS_Store
+ComfyUI_API参考手册.md
+ComfyUI插件开发技术规范.md
+IFLOW.md
