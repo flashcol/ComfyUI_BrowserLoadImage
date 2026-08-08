@@ -243,3 +243,12 @@
 .bli-resize-handle:hover::after {
     border-color: #aaa;
 }
+
+/* ===== 拖拽/缩放交互期间的性能优化 ===== */
+.bli-modal.bli-interacting .bli-media-item {
+    transition: none !important;
+    transform: none !important;
+}
+.bli-modal.bli-interacting .bli-media-grid {
+    pointer-events: none;
+}

@@ -187,6 +187,13 @@ const BLI_STYLES = `
     border-bottom: 2px solid #666;
 }
 .bli-resize-handle:hover::after { border-color: #aaa; }
+.bli-modal.bli-interacting .bli-media-item {
+    transition: none !important;
+    transform: none !important;
+}
+.bli-modal.bli-interacting .bli-media-grid {
+    pointer-events: none;
+}
 `;
 
 // ===== 节点 -> 媒体类型映射 =====
@@ -481,6 +488,7 @@ function openMediaModal(_node, mediaWidget, mediaType) {
         startY = e.clientY;
         startLeft = modal.offsetLeft;
         startTop = modal.offsetTop;
+        modal.classList.add("bli-interacting");
         document.body.style.userSelect = "none";
         e.preventDefault();
     };
@@ -492,6 +500,7 @@ function openMediaModal(_node, mediaWidget, mediaType) {
         startY = e.clientY;
         startWidth = modal.offsetWidth;
         startHeight = modal.offsetHeight;
+        modal.classList.add("bli-interacting");
         document.body.style.userSelect = "none";
         e.preventDefault();
         e.stopPropagation();
@@ -509,6 +518,7 @@ function openMediaModal(_node, mediaWidget, mediaType) {
 
     function onMouseUp() {
         if (isDragging || isResizing) {
+            modal.classList.remove("bli-interacting");
             document.body.style.userSelect = "";
         }
         isDragging = false;
