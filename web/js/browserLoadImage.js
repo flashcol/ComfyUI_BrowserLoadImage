@@ -1,558 +1,520 @@
 import { app } from "../../scripts/app.js";
 
-// 添加调试信息
-console.log("BrowserLoadImage extension loading...");
+// ===== CSS 样式（注入一次） =====
+const BLI_STYLES = `
+.bli-modal-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background-color: rgba(0, 0, 0, 0.6);
+    z-index: 10000;
+}
+.bli-modal {
+    position: absolute;
+    background-color: #2a2a2a;
+    border-radius: 8px;
+    border: 1px solid #444;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+.bli-modal-title {
+    color: white;
+    font-size: 15px;
+    font-weight: bold;
+    padding: 12px 20px;
+    text-align: center;
+    cursor: move;
+    user-select: none;
+    -webkit-user-select: none;
+    border-bottom: 1px solid #3a3a3a;
+    flex-shrink: 0;
+    background-color: #2f2f2f;
+}
+.bli-modal-close {
+    position: absolute;
+    top: 8px; right: 10px;
+    background: none;
+    border: none;
+    color: #999;
+    font-size: 22px;
+    cursor: pointer;
+    padding: 0;
+    width: 30px; height: 30px;
+    line-height: 30px;
+    text-align: center;
+    border-radius: 4px;
+    z-index: 1;
+    transition: all 0.15s ease;
+}
+.bli-modal-close:hover {
+    color: #fff;
+    background-color: rgba(255, 255, 255, 0.1);
+}
+.bli-search-container {
+    padding: 10px 20px;
+    position: relative;
+    flex-shrink: 0;
+}
+.bli-search-input {
+    width: 100%;
+    padding: 8px 32px 8px 12px;
+    background-color: #333;
+    border: 1px solid #555;
+    border-radius: 4px;
+    color: white;
+    font-size: 14px;
+    outline: none;
+    box-sizing: border-box;
+    transition: border-color 0.15s ease;
+}
+.bli-search-input:focus {
+    border-color: #777;
+}
+.bli-search-clear {
+    position: absolute;
+    right: 28px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: #999;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 0;
+    width: 20px; height: 20px;
+    line-height: 20px;
+    text-align: center;
+    display: none;
+}
+.bli-search-clear:hover { color: #fff; }
+.bli-media-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 12px;
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 20px 20px;
+    scrollbar-width: thin;
+    scrollbar-color: #666 #333;
+}
+.bli-media-grid::-webkit-scrollbar { width: 10px; }
+.bli-media-grid::-webkit-scrollbar-track { background: #333; border-radius: 5px; }
+.bli-media-grid::-webkit-scrollbar-thumb { background: #666; border-radius: 5px; border: 2px solid #333; }
+.bli-media-grid::-webkit-scrollbar-thumb:hover { background: #777; }
+.bli-media-item {
+    background-color: #333;
+    border: 1px solid #555;
+    border-radius: 6px;
+    padding: 10px;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    min-height: 200px;
+}
+.bli-media-item:hover {
+    background-color: #3a3a3a;
+    transform: scale(1.02);
+    border-color: #666;
+}
+.bli-media-item.selected {
+    background-color: #444;
+    border: 2px solid #777;
+}
+.bli-media-preview {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 8px;
+    min-height: 150px;
+}
+.bli-media-preview img,
+.bli-media-preview video {
+    max-width: 140px;
+    max-height: 140px;
+    width: auto; height: auto;
+    object-fit: contain;
+    border-radius: 4px;
+    border: 1px solid #555;
+}
+.bli-video-placeholder {
+    width: 140px; height: 140px;
+    background-color: #444;
+    border-radius: 4px;
+    border: 1px solid #555;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #999;
+    font-size: 12px;
+}
+.bli-filename-container { margin-top: auto; }
+.bli-filename {
+    color: #ccc;
+    font-size: 11px;
+    word-break: break-word;
+    line-height: 1.3;
+    text-align: center;
+    overflow-wrap: break-word;
+    hyphens: auto;
+}
+.bli-media-item.selected .bli-filename { color: #fff; }
+.bli-empty-message {
+    color: #999;
+    font-size: 14px;
+    grid-column: 1 / -1;
+    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+}
+.bli-resize-handle {
+    position: absolute;
+    right: 0; bottom: 0;
+    width: 18px; height: 18px;
+    cursor: nwse-resize;
+}
+.bli-resize-handle::after {
+    content: "";
+    position: absolute;
+    right: 4px; bottom: 4px;
+    width: 8px; height: 8px;
+    border-right: 2px solid #666;
+    border-bottom: 2px solid #666;
+}
+.bli-resize-handle:hover::after { border-color: #aaa; }
+`;
 
-// 注册扩展
+// ===== 节点 -> 媒体类型映射 =====
+const NODE_MEDIA_MAP = {
+    "BrowserLoadImage": "image",
+    "BrowserLoadVideoToImage": "video",
+    "BrowserLoadVideoStandard": "video",
+};
+
+// ===== 媒体类型 -> widget 名称映射 =====
+const MEDIA_WIDGET_NAME = {
+    "image": "image",
+    "video": "video",
+};
+
+/**
+ * 注入 CSS 样式（仅一次，通过 ID 去重）
+ */
+function injectStyles() {
+    if (document.getElementById("bli-styles")) return;
+    const style = document.createElement("style");
+    style.id = "bli-styles";
+    style.textContent = BLI_STYLES;
+    document.head.appendChild(style);
+}
+
+// ===== 注册 ComfyUI 扩展 =====
 app.registerExtension({
     name: "ComfyUI.BrowserLoadImage",
-    
-    async beforeRegisterNodeDef(nodeType, nodeData, app) {
-        // 检查是否是图片节点
-        if (nodeData.name === "BrowserLoadImage") {
-            console.log("Registering BrowserLoadImage node definition");
-            
-            // 重写onNodeCreated方法
-            const onNodeCreated = nodeType.prototype.onNodeCreated;
-            nodeType.prototype.onNodeCreated = function () {
-                const ret = onNodeCreated ? onNodeCreated.apply(this, arguments) : undefined;
-                
-                console.log("BrowserLoadImage node created, adding widgets...");
-                
-                // 延迟添加widget，确保DOM已准备好
-                // setTimeout(() => {
-                    addBrowseWidget(this, "image");
-                // }, 100);
-                
-                return ret;
 
-            };
-        }
-        
-        // 检查是否是视频转图片节点
-        if (nodeData.name === "BrowserLoadVideoToImage") {
-            console.log("Registering BrowserLoadVideoToImage node definition");
-            
-            // 重写onNodeCreated方法
-            const onNodeCreated = nodeType.prototype.onNodeCreated;
-            nodeType.prototype.onNodeCreated = function () {
-                const ret = onNodeCreated ? onNodeCreated.apply(this, arguments) : undefined;
-                
-                console.log("BrowserLoadVideoToImage node created, adding widgets...");
-                
-                // 延迟添加widget，确保DOM已准备好
-                // setTimeout(() => {
-                    addBrowseWidget(this, "video");
-                // }, 100);
-                
-                return ret;
+    async beforeRegisterNodeDef(nodeType, nodeData, _app) {
+        const mediaType = NODE_MEDIA_MAP[nodeData.name];
+        if (!mediaType) return;
 
-            };
-        }
-        
-        // 检查是否是标准视频节点
-        if (nodeData.name === "BrowserLoadVideoStandard") {
-            console.log("Registering BrowserLoadVideoStandard node definition");
-            
-            // 重写onNodeCreated方法
-            const onNodeCreated = nodeType.prototype.onNodeCreated;
-            nodeType.prototype.onNodeCreated = function () {
-                const ret = onNodeCreated ? onNodeCreated.apply(this, arguments) : undefined;
-                
-                console.log("BrowserLoadVideoStandard node created, adding widgets...");
-                
-                // 延迟添加widget，确保DOM已准备好
-                // setTimeout(() => {
-                    addBrowseWidget(this, "video");
-                // }, 100);
-                
-                return ret;
-
-            };
-        }
-    }
+        const origOnNodeCreated = nodeType.prototype.onNodeCreated;
+        nodeType.prototype.onNodeCreated = function () {
+            const ret = origOnNodeCreated
+                ? origOnNodeCreated.apply(this, arguments)
+                : undefined;
+            addBrowseWidget(this, mediaType);
+            return ret;
+        };
+    },
 });
 
-// 添加浏览widget到节点
+/**
+ * 为节点添加「浏览」按钮 widget
+ */
 function addBrowseWidget(node, mediaType) {
-    // 检查是否已经添加了widget
-    if (node._browseWidgetAdded) {
-        console.log("Browse widget already added");
-        return;
-    }
+    if (node._browseWidgetAdded) return;
     node._browseWidgetAdded = true;
-    
-    console.log(`Adding browse widget to BrowserLoad${mediaType === 'video' ? 'Video' : 'Image'} node`);
-    
-    // 找到对应的widget
-    const mediaWidget = node.widgets.find(w => w.name === mediaType);
-    if (!mediaWidget) {
-        console.log(`${mediaType === 'video' ? 'Video' : 'Image'} widget not found`);
-        return;
-    }
-    
-    // 添加浏览按钮widget
-    const browseWidget = node.addWidget(
-        "button",  // widget类型
-        mediaType === 'video' ? "浏览视频" : "浏览图片",  // 显示文本
-        "browse",   // 名称
-        () => {       // 回调函数
-            openMediaModal(node, mediaWidget, mediaType);
-        }
+
+    const widgetName = MEDIA_WIDGET_NAME[mediaType];
+    const mediaWidget = node.widgets.find((w) => w.name === widgetName);
+    if (!mediaWidget) return;
+
+    node.addWidget(
+        "button",
+        mediaType === "video" ? "浏览视频" : "浏览图片",
+        "browse",
+        () => openMediaModal(node, mediaWidget, mediaType)
     );
-    
-    console.log("Browse widget added successfully");
 }
 
-// 打开媒体选择弹窗
-function openMediaModal(node, mediaWidget, mediaType) {
-    // 如果弹窗已存在，先关闭
-    if (window.mediaPreviewModal) {
-        window.mediaPreviewModal.remove();
-    }
-    
-    // 创建弹窗
+/**
+ * 打开媒体选择弹窗
+ * 支持：拖拽标题栏移动、右下角缩放、搜索过滤、键盘导航
+ */
+function openMediaModal(_node, mediaWidget, mediaType) {
+    // 移除已有弹窗
+    const existing = document.getElementById("bli-modal-overlay");
+    if (existing) existing.remove();
+
+    injectStyles();
+
+    // ===== 创建 DOM 结构 =====
+
+    // 遮罩层
+    const overlay = document.createElement("div");
+    overlay.id = "bli-modal-overlay";
+    overlay.className = "bli-modal-overlay";
+
+    // 弹窗主体（absolute 定位，居中初始化）
     const modal = document.createElement("div");
-    modal.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background-color: rgba(0, 0, 0, 0.8);
-        z-index: 10000;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    `;
-    
-    // 创建弹窗内容
-    const modalContent = document.createElement("div");
-    modalContent.style.cssText = `
-        background-color: #2a2a2a;
-        border-radius: 8px;
-        padding: 20px;
-        width: 800px;
-        height: 600px;
-        overflow: hidden;
-        position: relative;
-        border: 1px solid #444;
-        display: flex;
-        flex-direction: column;
-    `;
-    
-    // 标题
-    const title = document.createElement("div");
-    title.textContent = mediaType === 'video' ? "选择视频" : "选择图片";
-    title.style.cssText = `
-        color: white;
-        font-size: 16px;
-        font-weight: bold;
-        margin-bottom: 15px;
-        text-align: center;
-    `;
-    
+    modal.className = "bli-modal";
+    const initW = 800, initH = 600;
+    modal.style.width = initW + "px";
+    modal.style.height = initH + "px";
+    modal.style.left = Math.max(0, (window.innerWidth - initW) / 2) + "px";
+    modal.style.top = Math.max(0, (window.innerHeight - initH) / 2) + "px";
+
+    // 标题栏
+    const titleBar = document.createElement("div");
+    titleBar.className = "bli-modal-title";
+    titleBar.textContent = mediaType === "video" ? "选择视频" : "选择图片";
+
     // 关闭按钮
-    const closeButton = document.createElement("button");
-    closeButton.textContent = "×";
-    closeButton.style.cssText = `
-        position: absolute;
-        top: 10px;
-        right: 10px;
-        background: none;
-        border: none;
-        color: #999;
-        font-size: 24px;
-        cursor: pointer;
-        padding: 0;
-        width: 30px;
-        height: 30px;
-    `;
-    closeButton.onclick = () => {
-        modal.remove();
-        window.mediaPreviewModal = null;
-    };
-    
-    // 搜索框容器
-    const searchContainer = document.createElement("div");
-    searchContainer.style.cssText = `
-        margin-bottom: 15px;
-        position: relative;
-    `;
-    
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "bli-modal-close";
+    closeBtn.textContent = "\u00d7";
+    closeBtn.onclick = closeModal;
+
     // 搜索框
+    const searchContainer = document.createElement("div");
+    searchContainer.className = "bli-search-container";
+
     const searchInput = document.createElement("input");
     searchInput.type = "text";
-    searchInput.placeholder = mediaType === 'video' ? "搜索视频名称..." : "搜索图片名称...";
-    searchInput.style.cssText = `
-        width: 100%;
-        padding: 8px 12px;
-        background-color: #333;
-        border: 1px solid #555;
-        border-radius: 4px;
-        color: white;
-        font-size: 14px;
-        outline: none;
-        box-sizing: border-box;
-    `;
-    searchInput.onfocus = () => {
-        searchInput.style.borderColor = '#666';
+    searchInput.className = "bli-search-input";
+    searchInput.placeholder = mediaType === "video" ? "搜索视频名称..." : "搜索图片名称...";
+
+    const clearBtn = document.createElement("button");
+    clearBtn.className = "bli-search-clear";
+    clearBtn.textContent = "\u00d7";
+    clearBtn.onclick = () => {
+        searchInput.value = "";
+        clearBtn.style.display = "none";
+        renderMedia();
     };
-    searchInput.onblur = () => {
-        searchInput.style.borderColor = '#555';
-    };
-    
-    // 清除搜索按钮
-    const clearButton = document.createElement("button");
-    clearButton.textContent = "×";
-    clearButton.style.cssText = `
-        position: absolute;
-        right: 8px;
-        top: 50%;
-        transform: translateY(-50%);
-        background: none;
-        border: none;
-        color: #999;
-        font-size: 18px;
-        cursor: pointer;
-        padding: 0;
-        width: 20px;
-        height: 20px;
-        display: none;
-    `;
-    clearButton.onclick = () => {
-        searchInput.value = '';
-        clearButton.style.display = 'none';
-        filterMedia();
-    };
-    
-    // 监听搜索输入
+
     searchInput.oninput = () => {
-        clearButton.style.display = searchInput.value ? 'block' : 'none';
-        filterMedia();
+        clearBtn.style.display = searchInput.value ? "block" : "none";
+        renderMedia();
     };
-    
+
     searchContainer.appendChild(searchInput);
-    searchContainer.appendChild(clearButton);
-    
+    searchContainer.appendChild(clearBtn);
+
     // 媒体网格
     const mediaGrid = document.createElement("div");
-    mediaGrid.style.cssText = `
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-        gap: 12px;
-        flex: 1;
-        overflow-y: scroll;
-        padding: 10px;
-        border: 1px solid #444;
-        border-radius: 4px;
-        scrollbar-width: thin;
-        scrollbar-color: #666 #333;
-    `;
-    
-    // 添加Webkit滚动条样式
-    const style = document.createElement('style');
-    style.textContent = `
-        .media-grid::-webkit-scrollbar {
-            width: 12px;
-        }
-        .media-grid::-webkit-scrollbar-track {
-            background: #333;
-            border-radius: 6px;
-        }
-        .media-grid::-webkit-scrollbar-thumb {
-            background: #666;
-            border-radius: 6px;
-            border: 2px solid #333;
-        }
-        .media-grid::-webkit-scrollbar-thumb:hover {
-            background: #777;
-        }
-        .media-grid::-webkit-scrollbar-thumb:active {
-            background: #555;
-        }
-    `;
-    document.head.appendChild(style);
-    mediaGrid.className = 'media-grid';
-    
-    // 获取所有可用媒体
-    const availableMedia = mediaWidget.options ? mediaWidget.options.values : [];
-    console.log(`Available ${mediaType}s for modal:`, availableMedia);
-    
-    // 过滤和渲染媒体的函数
-    function filterMedia() {
-        const searchTerm = searchInput.value.toLowerCase().trim();
-        
-        // 保存当前滚动位置
-        const scrollTop = mediaGrid.scrollTop;
-        
-        // 清空网格
-        mediaGrid.innerHTML = '';
-        
-        // 过滤媒体
-        const filteredMedia = searchTerm 
-            ? availableMedia.filter(media => media.toLowerCase().includes(searchTerm))
-            : availableMedia;
-        
-        if (!availableMedia || availableMedia.length === 0) {
-            const emptyMessage = document.createElement("div");
-            emptyMessage.style.cssText = `
-                color: #999;
-                font-size: 14px;
-                grid-column: 1/-1;
-                text-align: center;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                min-height: 200px;
-            `;
-            emptyMessage.textContent = `没有找到${mediaType === 'video' ? '视频' : '图片'}文件`;
-            mediaGrid.appendChild(emptyMessage);
-        } else if (filteredMedia.length === 0) {
-            const emptyMessage = document.createElement("div");
-            emptyMessage.style.cssText = `
-                color: #999;
-                font-size: 14px;
-                grid-column: 1/-1;
-                text-align: center;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                min-height: 200px;
-            `;
-            emptyMessage.textContent = "没有找到匹配的媒体";
-            mediaGrid.appendChild(emptyMessage);
-        } else {
-            // 添加媒体
-            filteredMedia.forEach((media, index) => {
-                const isSelected = media === mediaWidget.value;
-                const mediaUrl = `/view?filename=${encodeURIComponent(media)}&subfolder=&type=input`;
-                
-                const mediaItem = document.createElement("div");
-                mediaItem.style.cssText = `
-                    background-color: ${isSelected ? '#444' : '#333'};
-                    border: ${isSelected ? '2px solid #666' : '1px solid #555'};
-                    border-radius: 6px;
-                    padding: 10px;
-                    cursor: pointer;
-                    text-align: center;
-                    transition: all 0.2s ease;
-                    display: flex;
-                    flex-direction: column;
-                    min-height: 200px;
-                `;
-                mediaItem.onmouseover = () => {
-                    mediaItem.style.backgroundColor = '#3a3a3a';
-                    mediaItem.style.transform = 'scale(1.02)';
-                };
-                mediaItem.onmouseout = () => {
-                    mediaItem.style.backgroundColor = isSelected ? '#444' : '#333';
-                    mediaItem.style.transform = 'scale(1)';
-                };
-                
-                // 创建媒体容器
-                const mediaContainer = document.createElement("div");
-                mediaContainer.style.cssText = `
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    margin-bottom: 8px;
-                    min-height: 150px;
-                `;
-                
-                if (mediaType === 'video') {
-                    // 对于视频，创建视频元素
-                    const videoElement = document.createElement("video");
-                    videoElement.src = mediaUrl;
-                    videoElement.style.cssText = `
-                        max-width: 140px;
-                        max-height: 140px;
-                        width: auto;
-                        height: auto;
-                        object-fit: contain;
-                        border-radius: 4px;
-                        border: 1px solid #555;
-                    `;
-                    videoElement.muted = true;
-                    videoElement.loop = true;
-                    videoElement.onmouseover = () => {
-                        videoElement.play();
-                    };
-                    videoElement.onmouseout = () => {
-                        videoElement.pause();
-                        videoElement.currentTime = 0;
-                    };
-                    videoElement.onerror = () => {
-                        // 视频加载失败时显示占位符
-                        const placeholder = document.createElement("div");
-                        placeholder.style.cssText = `
-                            width: 140px;
-                            height: 140px;
-                            background-color: #444;
-                            border-radius: 4px;
-                            border: 1px solid #555;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            color: #999;
-                            font-size: 12px;
-                        `;
-                        placeholder.textContent = "视频";
-                        videoElement.parentNode.replaceChild(placeholder, videoElement);
-                    };
-                    mediaContainer.appendChild(videoElement);
-                } else {
-                    // 对于图片，创建图片元素
-                    const imgElement = document.createElement("img");
-                    imgElement.src = mediaUrl;
-                    imgElement.style.cssText = `
-                        max-width: 140px;
-                        max-height: 140px;
-                        width: auto;
-                        height: auto;
-                        object-fit: contain;
-                        border-radius: 4px;
-                        border: 1px solid #555;
-                    `;
-                    imgElement.onerror = () => {
-                        imgElement.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjgwIiBmaWxsPSIjMzMzIi8+CjxwYXRoIGQ9Ik0yNSAyNUw1NSA1NUwyNSA1NVYyNVoiIGZpbGw9IiM2NjYiLz4KPGNpcmNsZSBjeD0iNDAiIGN5PSI0MCIgcj0iMTAiIGZpbGw9IiM5OTkiLz4KPC9zdmc+C';
-                    };
-                    mediaContainer.appendChild(imgElement);
-                }
-                
-                // 创建文件名容器
-                const fileNameContainer = document.createElement("div");
-                fileNameContainer.style.cssText = `
-                    margin-top: auto;
-                `;
-                
-                const fileName = document.createElement("div");
-                fileName.style.cssText = `
-                    color: ${isSelected ? '#fff' : '#ccc'};
-                    font-size: 11px;
-                    word-break: break-word;
-                    line-height: 1.3;
-                    text-align: center;
-                    width: 100%;
-                    overflow-wrap: break-word;
-                    hyphens: auto;
-                `;
-                fileName.textContent = media;
-                
-                fileNameContainer.appendChild(fileName);
-                
-                mediaItem.appendChild(mediaContainer);
-                mediaItem.appendChild(fileNameContainer);
-                
-                mediaItem.onclick = () => {
-                    console.log(`Selected ${mediaType}:`, media);
-                    
-                    // 选择媒体
-                    mediaWidget.value = media;
-                    if (mediaWidget.callback) {
-                        mediaWidget.callback(media);
-                    }
-                    
-                    // 关闭弹窗
-                    modal.remove();
-                    window.mediaPreviewModal = null;
-                };
-                
-                mediaGrid.appendChild(mediaItem);
-            });
-        }
-        
-        // 恢复滚动位置
-        mediaGrid.scrollTop = scrollTop;
-    }
-    
-    // 初始渲染
-    filterMedia();
-    
-    // 组装弹窗
-    modalContent.appendChild(title);
-    modalContent.appendChild(closeButton);
-    modalContent.appendChild(searchContainer);
-    modalContent.appendChild(mediaGrid);
-    modal.appendChild(modalContent);
-    
-    // 点击背景关闭
-    modal.onclick = (e) => {
-        if (e.target === modal) {
-            modal.remove();
-            window.mediaPreviewModal = null;
-        }
-    };
-    
-    // ESC键关闭
-    const escHandler = (e) => {
-        if (e.key === 'Escape') {
-            modal.remove();
-            window.mediaPreviewModal = null;
-            document.removeEventListener('keydown', escHandler);
-        }
-    };
-    document.addEventListener('keydown', escHandler);
-    
-    // 自动聚焦搜索框
-    setTimeout(() => {
-        searchInput.focus();
-    }, 100);
-    
-    // 添加滚动条拖动优化
-    let isScrolling = false;
-    mediaGrid.addEventListener('scroll', () => {
-        if (!isScrolling) {
-            mediaGrid.style.scrollBehavior = 'auto';
-            isScrolling = true;
-        }
-        
-        clearTimeout(isScrolling.scrollEndTimeout);
-        isScrolling.scrollEndTimeout = setTimeout(() => {
-            isScrolling = false;
-            mediaGrid.style.scrollBehavior = 'smooth';
-        }, 150);
-    });
-    
-    // 添加键盘导航
-    modal.addEventListener('keydown', (e) => {
-        const scrollAmount = 200; // 每次滚动的像素
-        switch(e.key) {
-            case 'ArrowDown':
-            case 'PageDown':
-                e.preventDefault();
-                mediaGrid.scrollBy({
-                    top: scrollAmount,
-                    behavior: 'smooth'
-                });
-                break;
-            case 'ArrowUp':
-            case 'PageUp':
-                e.preventDefault();
-                mediaGrid.scrollBy({
-                    top: -scrollAmount,
-                    behavior: 'smooth'
-                });
-                break;
-            case 'Home':
-                e.preventDefault();
-                mediaGrid.scrollTo({
-                    top: 0,
-                    behavior: 'smooth'
-                });
-                break;
-            case 'End':
-                e.preventDefault();
-                mediaGrid.scrollTo({
-                    top: mediaGrid.scrollHeight,
-                    behavior: 'smooth'
-                });
-                break;
-        }
-    });
-    
-    document.body.appendChild(modal);
-    window.mediaPreviewModal = modal;
-}
+    mediaGrid.className = "bli-media-grid";
 
-console.log("BrowserLoadImage extension loaded");
+    // 缩放手柄
+    const resizeHandle = document.createElement("div");
+    resizeHandle.className = "bli-resize-handle";
+
+    // ===== 渲染媒体列表 =====
+
+    const availableMedia = mediaWidget.options ? mediaWidget.options.values : [];
+
+    function renderMedia() {
+        const term = searchInput.value.toLowerCase().trim();
+        const scrollPos = mediaGrid.scrollTop;
+        mediaGrid.innerHTML = "";
+
+        const filtered = term
+            ? availableMedia.filter((m) => m.toLowerCase().includes(term))
+            : availableMedia;
+
+        if (!availableMedia.length || !filtered.length) {
+            const msg = document.createElement("div");
+            msg.className = "bli-empty-message";
+            msg.textContent = !availableMedia.length
+                ? (mediaType === "video" ? "没有找到视频文件" : "没有找到图片文件")
+                : "没有找到匹配的媒体";
+            mediaGrid.appendChild(msg);
+            return;
+        }
+
+        filtered.forEach((media) => {
+            const isSelected = media === mediaWidget.value;
+            const url = "/view?filename=" + encodeURIComponent(media) + "&subfolder=&type=input";
+
+            const item = document.createElement("div");
+            item.className = "bli-media-item" + (isSelected ? " selected" : "");
+
+            // 预览
+            const preview = document.createElement("div");
+            preview.className = "bli-media-preview";
+
+            if (mediaType === "video") {
+                const vid = document.createElement("video");
+                vid.src = url;
+                vid.muted = true;
+                vid.loop = true;
+                vid.onmouseover = () => vid.play();
+                vid.onmouseout = () => { vid.pause(); vid.currentTime = 0; };
+                vid.onerror = () => {
+                    const ph = document.createElement("div");
+                    ph.className = "bli-video-placeholder";
+                    ph.textContent = "视频";
+                    vid.parentNode.replaceChild(ph, vid);
+                };
+                preview.appendChild(vid);
+            } else {
+                const img = document.createElement("img");
+                img.src = url;
+                img.onerror = () => {
+                    img.src = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODAiIGhlaWdodD0iODAiIGZpbGw9IiMzMzMiLz48Y2lyY2xlIGN4PSI0MCIgY3k9IjQwIiByPSIxMCIgZmlsbD0iIzk5OSIvPjwvc3ZnPg==";
+                };
+                preview.appendChild(img);
+            }
+
+            // 文件名
+            const nameBox = document.createElement("div");
+            nameBox.className = "bli-filename-container";
+            const nameEl = document.createElement("div");
+            nameEl.className = "bli-filename";
+            nameEl.textContent = media;
+            nameBox.appendChild(nameEl);
+
+            item.appendChild(preview);
+            item.appendChild(nameBox);
+
+            // 点击选择
+            item.onclick = () => {
+                mediaWidget.value = media;
+                if (mediaWidget.callback) mediaWidget.callback(media);
+                closeModal();
+            };
+
+            mediaGrid.appendChild(item);
+        });
+
+        mediaGrid.scrollTop = scrollPos;
+    }
+
+    // ===== 组装 DOM =====
+
+    modal.appendChild(titleBar);
+    modal.appendChild(closeBtn);
+    modal.appendChild(searchContainer);
+    modal.appendChild(mediaGrid);
+    modal.appendChild(resizeHandle);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    // 初始渲染 + 聚焦搜索框
+    renderMedia();
+    setTimeout(() => searchInput.focus(), 50);
+
+    // ===== 关闭逻辑 =====
+
+    function closeModal() {
+        overlay.remove();
+        document.removeEventListener("keydown", onKeyDown);
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+    }
+
+    // 点击遮罩关闭
+    overlay.onclick = (e) => {
+        if (e.target === overlay) closeModal();
+    };
+
+    // ESC 关闭
+    function onKeyDown(e) {
+        if (e.key === "Escape") {
+            closeModal();
+            return;
+        }
+        // 键盘导航（仅在搜索框未聚焦时，或使用 PageUp/Down 时）
+        const scrollAmount = 200;
+        switch (e.key) {
+            case "ArrowDown":
+            case "PageDown":
+                e.preventDefault();
+                mediaGrid.scrollBy({ top: scrollAmount, behavior: "smooth" });
+                break;
+            case "ArrowUp":
+            case "PageUp":
+                e.preventDefault();
+                mediaGrid.scrollBy({ top: -scrollAmount, behavior: "smooth" });
+                break;
+            case "Home":
+                if (document.activeElement !== searchInput) {
+                    e.preventDefault();
+                    mediaGrid.scrollTo({ top: 0, behavior: "smooth" });
+                }
+                break;
+            case "End":
+                if (document.activeElement !== searchInput) {
+                    e.preventDefault();
+                    mediaGrid.scrollTo({ top: mediaGrid.scrollHeight, behavior: "smooth" });
+                }
+                break;
+        }
+    }
+    document.addEventListener("keydown", onKeyDown);
+
+    // ===== 拖拽 & 缩放 =====
+
+    let isDragging = false, isResizing = false;
+    let startX = 0, startY = 0;
+    let startLeft = 0, startTop = 0, startWidth = 0, startHeight = 0;
+    const MIN_W = 400, MIN_H = 300;
+
+    // 拖拽：标题栏 mousedown
+    titleBar.onmousedown = (e) => {
+        isDragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        startLeft = modal.offsetLeft;
+        startTop = modal.offsetTop;
+        document.body.style.userSelect = "none";
+        e.preventDefault();
+    };
+
+    // 缩放：手柄 mousedown
+    resizeHandle.onmousedown = (e) => {
+        isResizing = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        startWidth = modal.offsetWidth;
+        startHeight = modal.offsetHeight;
+        document.body.style.userSelect = "none";
+        e.preventDefault();
+        e.stopPropagation();
+    };
+
+    function onMouseMove(e) {
+        if (isDragging) {
+            modal.style.left = (startLeft + e.clientX - startX) + "px";
+            modal.style.top = (startTop + e.clientY - startY) + "px";
+        } else if (isResizing) {
+            modal.style.width = Math.max(MIN_W, startWidth + e.clientX - startX) + "px";
+            modal.style.height = Math.max(MIN_H, startHeight + e.clientY - startY) + "px";
+        }
+    }
+
+    function onMouseUp() {
+        if (isDragging || isResizing) {
+            document.body.style.userSelect = "";
+        }
+        isDragging = false;
+        isResizing = false;
+    }
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+}

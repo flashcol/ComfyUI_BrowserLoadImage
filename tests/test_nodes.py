@@ -1,5 +1,6 @@
 """
 Tests for Browser Load Image nodes
+对齐当前真实 API
 """
 
 import unittest
@@ -8,185 +9,248 @@ import os
 import shutil
 from pathlib import Path
 import sys
+import types
 
-# Add the plugin directory to Python path
+# 将插件目录加入 Python 路径
 plugin_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(plugin_dir))
 
+# 在导入节点之前 mock folder_paths
+mock_folder_paths = types.ModuleType("folder_paths")
+mock_folder_paths._input_dir = None
+
+
+def _get_input_directory():
+    return mock_folder_paths._input_dir
+
+
+def _get_annotated_filepath(filename):
+    input_dir = mock_folder_paths._input_dir
+    if input_dir:
+        return os.path.join(input_dir, filename)
+    raise ValueError("No input directory set")
+
+
+mock_folder_paths.get_input_directory = _get_input_directory
+mock_folder_paths.get_annotated_filepath = _get_annotated_filepath
+sys.modules["folder_paths"] = mock_folder_paths
+
+from nodes.utils import (
+    list_media_files,
+    resolve_media_path,
+    is_changed,
+    validate_input,
+    SUPPORTED_IMAGE_FORMATS,
+    SUPPORTED_VIDEO_FORMATS,
+)
 from nodes.browser_load_image import BrowserLoadImage
 
-class TestBrowserLoadImage(unittest.TestCase):
-    
+
+# ===== 测试常量 =====
+
+class TestConstants(unittest.TestCase):
+    """测试格式常量定义"""
+
+    def test_image_formats_is_set(self):
+        self.assertIsInstance(SUPPORTED_IMAGE_FORMATS, set)
+
+    def test_video_formats_is_set(self):
+        self.assertIsInstance(SUPPORTED_VIDEO_FORMATS, set)
+
+    def test_image_formats_contains_common(self):
+        for fmt in [".jpg", ".jpeg", ".png", ".webp"]:
+            self.assertIn(fmt, SUPPORTED_IMAGE_FORMATS)
+
+    def test_video_formats_contains_common(self):
+        for fmt in [".mp4", ".avi", ".mov", ".mkv"]:
+            self.assertIn(fmt, SUPPORTED_VIDEO_FORMATS)
+
+
+# ===== 测试工具函数 =====
+
+class TestUtils(unittest.TestCase):
+    """测试 nodes/utils.py 中的公共工具函数"""
+
     def setUp(self):
-        """Set up test environment"""
         self.temp_dir = tempfile.mkdtemp()
-        self.test_images_dir = Path(self.temp_dir) / "input"
-        self.test_images_dir.mkdir()
-        
-        # Create some test images
-        self.create_test_images()
-        
-        # Create node instance
-        self.node = BrowserLoadImage()
-        self.node.input_folder = self.test_images_dir
-        
+        mock_folder_paths._input_dir = self.temp_dir
+
     def tearDown(self):
-        """Clean up test environment"""
         shutil.rmtree(self.temp_dir)
-    
-    def create_test_images(self):
-        """Create test image files"""
+        mock_folder_paths._input_dir = None
+
+    def test_list_media_files_empty_dir(self):
+        result = list_media_files(SUPPORTED_IMAGE_FORMATS)
+        self.assertEqual(result, [])
+
+    def test_list_media_files_filters_correctly(self):
         from PIL import Image
-        
-        # Create a simple test image
-        test_image = Image.new('RGB', (512, 512), color='red')
-        
-        # Save test images
-        test_image.save(self.test_images_dir / "test1.jpg")
-        test_image.save(self.test_images_dir / "test2.png")
-        test_image.save(self.test_images_dir / "test3.webp")
-        
-        # Create a subdirectory with images
-        subdir = self.test_images_dir / "subdir"
-        subdir.mkdir()
-        test_image.save(subdir / "test4.jpg")
-    
-    def test_input_types(self):
-        """Test INPUT_TYPES method"""
-        input_types = BrowserLoadImage.INPUT_TYPES()
-        
-        self.assertIn("required", input_types)
-        self.assertIn("image", input_types["required"])
-        self.assertIn("hidden", input_types)
-        self.assertIn("node_id", input_types["hidden"])
-    
+
+        img = Image.new("RGB", (10, 10), "red")
+        img.save(os.path.join(self.temp_dir, "test.png"))
+        # 非图片文件应被过滤
+        with open(os.path.join(self.temp_dir, "readme.txt"), "w") as f:
+            f.write("hello")
+
+        result = list_media_files(SUPPORTED_IMAGE_FORMATS)
+        self.assertEqual(result, ["test.png"])
+
+    def test_list_media_files_sorted(self):
+        from PIL import Image
+
+        img = Image.new("RGB", (10, 10), "red")
+        img.save(os.path.join(self.temp_dir, "b.png"))
+        img.save(os.path.join(self.temp_dir, "a.png"))
+
+        result = list_media_files(SUPPORTED_IMAGE_FORMATS)
+        self.assertEqual(result, ["a.png", "b.png"])
+
+    def test_list_media_files_ignores_subdirs(self):
+        from PIL import Image
+
+        img = Image.new("RGB", (10, 10), "red")
+        img.save(os.path.join(self.temp_dir, "top.png"))
+        sub = os.path.join(self.temp_dir, "subdir")
+        os.makedirs(sub)
+        img.save(os.path.join(sub, "nested.png"))
+
+        result = list_media_files(SUPPORTED_IMAGE_FORMATS)
+        self.assertEqual(result, ["top.png"])
+
+    def test_resolve_media_path(self):
+        path = resolve_media_path("test.png")
+        self.assertEqual(path, os.path.join(self.temp_dir, "test.png"))
+
+    def test_resolve_media_path_empty_raises(self):
+        with self.assertRaises(ValueError):
+            resolve_media_path("")
+
+    def test_resolve_media_path_none_raises(self):
+        with self.assertRaises(ValueError):
+            resolve_media_path(None)
+
+    def test_validate_input_empty_is_ok(self):
+        self.assertTrue(validate_input(""))
+
+    def test_validate_input_none_is_ok(self):
+        self.assertTrue(validate_input(None))
+
+    def test_validate_input_existing_file(self):
+        from PIL import Image
+
+        img = Image.new("RGB", (10, 10), "red")
+        img.save(os.path.join(self.temp_dir, "test.png"))
+        self.assertTrue(validate_input("test.png"))
+
+    def test_validate_input_nonexistent(self):
+        self.assertFalse(validate_input("nonexistent.png"))
+
+    def test_is_changed_existing_file(self):
+        from PIL import Image
+
+        img = Image.new("RGB", (10, 10), "red")
+        img.save(os.path.join(self.temp_dir, "test.png"))
+        result = is_changed("test.png")
+        self.assertIsInstance(result, float)
+
+    def test_is_changed_nonexistent(self):
+        self.assertFalse(is_changed("nonexistent.png"))
+
+    def test_is_changed_empty(self):
+        self.assertFalse(is_changed(""))
+
+
+# ===== 测试 BrowserLoadImage 节点 =====
+
+class TestBrowserLoadImage(unittest.TestCase):
+    """测试 BrowserLoadImage 节点"""
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        mock_folder_paths._input_dir = self.temp_dir
+        self.node = BrowserLoadImage()
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir)
+        mock_folder_paths._input_dir = None
+
     def test_return_types(self):
-        """Test RETURN_TYPES and RETURN_NAMES"""
         self.assertEqual(BrowserLoadImage.RETURN_TYPES, ("IMAGE", "MASK"))
         self.assertEqual(BrowserLoadImage.RETURN_NAMES, ("image", "mask"))
-    
-    def test_category(self):
-        """Test CATEGORY"""
-        self.assertEqual(BrowserLoadImage.CATEGORY, "image")
-    
-    def test_scan_images(self):
-        """Test image scanning functionality"""
-        self.node._scan_images()
-        
-        # Should find all test images
-        self.assertEqual(len(self.node.image_list), 4)
-        
-        # Check image info
-        image_info = self.node.image_list[0]
-        self.assertIn('filename', image_info)
-        self.assertIn('path', image_info)
-        self.assertIn('size', image_info)
-        self.assertIn('width', image_info)
-        self.assertIn('height', image_info)
-    
-    def test_get_image_list_pagination(self):
-        """Test image list pagination"""
-        self.node._scan_images()
-        
-        # Test first page
-        result = self.node.get_image_list(page=1, per_page=2)
-        self.assertEqual(len(result['images']), 2)
-        self.assertEqual(result['pagination']['current_page'], 1)
-        self.assertEqual(result['pagination']['total_pages'], 2)
-        self.assertTrue(result['pagination']['has_next'])
-        self.assertFalse(result['pagination']['has_prev'])
-        
-        # Test second page
-        result = self.node.get_image_list(page=2, per_page=2)
-        self.assertEqual(len(result['images']), 2)
-        self.assertEqual(result['pagination']['current_page'], 2)
-        self.assertEqual(result['pagination']['total_pages'], 2)
-        self.assertFalse(result['pagination']['has_next'])
-        self.assertTrue(result['pagination']['has_prev'])
-    
-    def test_get_image_list_search(self):
-        """Test image list search functionality"""
-        self.node._scan_images()
-        
-        # Search for specific filename
-        result = self.node.get_image_list(search="test1")
-        self.assertEqual(len(result['images']), 1)
-        self.assertEqual(result['images'][0]['filename'], 'test1.jpg')
-        
-        # Search with no results
-        result = self.node.get_image_list(search="nonexistent")
-        self.assertEqual(len(result['images']), 0)
-    
-    def test_get_thumbnail(self):
-        """Test thumbnail generation"""
-        self.node._scan_images()
-        
-        if self.node.image_list:
-            image_path = self.node.image_list[0]['path']
-            thumbnail = self.node.get_thumbnail(image_path)
-            
-            self.assertIsNotNone(thumbnail)
-            self.assertIsInstance(thumbnail, str)
-            # Should be base64 encoded
-            self.assertTrue(len(thumbnail) > 0)
-    
-    def test_get_image_metadata(self):
-        """Test image metadata extraction"""
-        self.node._scan_images()
-        
-        if self.node.image_list:
-            image_path = self.node.image_list[0]['path']
-            metadata = self.node.get_image_metadata(image_path)
-            
-            self.assertIsNotNone(metadata)
-            self.assertIn('filename', metadata)
-            self.assertIn('width', metadata)
-            self.assertIn('height', metadata)
-            self.assertIn('size', metadata)
-    
-    def test_load_image(self):
-        """Test image loading"""
-        self.node._scan_images()
-        
-        if self.node.image_list:
-            image_info = self.node.image_list[0]
-            
-            # Test loading by dict
-            try:
-                import torch
-                image_tensor, mask_tensor = self.node.load_image(image_info)
-                
-                self.assertIsInstance(image_tensor, torch.Tensor)
-                self.assertIsInstance(mask_tensor, torch.Tensor)
-                
-                # Check tensor dimensions (should be [1, H, W, C])
-                self.assertEqual(len(image_tensor.shape), 4)
-                self.assertEqual(image_tensor.shape[0], 1)  # Batch size
-                
-            except ImportError:
-                # Skip test if torch is not available
-                pass
-    
-    def test_refresh_images(self):
-        """Test image refresh functionality"""
-        # Initial scan
-        self.node._scan_images()
-        initial_count = len(self.node.image_list)
-        
-        # Add a new image
-        from PIL import Image
-        new_image = Image.new('RGB', (256, 256), color='blue')
-        new_image.save(self.test_images_dir / "new_test.jpg")
-        
-        # Refresh
-        self.node.refresh_images()
-        
-        # Should find the new image
-        self.assertEqual(len(self.node.image_list), initial_count + 1)
-        
-        # Check that new image is in the list
-        filenames = [img['filename'] for img in self.node.image_list]
-        self.assertIn('new_test.jpg', filenames)
 
-if __name__ == '__main__':
+    def test_category(self):
+        self.assertEqual(BrowserLoadImage.CATEGORY, "image")
+
+    def test_function_name(self):
+        self.assertEqual(BrowserLoadImage.FUNCTION, "load_image")
+
+    def test_input_types_has_required_image(self):
+        input_types = BrowserLoadImage.INPUT_TYPES()
+        self.assertIn("required", input_types)
+        self.assertIn("image", input_types["required"])
+
+    def test_input_types_with_images(self):
+        from PIL import Image
+
+        img = Image.new("RGB", (10, 10), "red")
+        img.save(os.path.join(self.temp_dir, "photo.jpg"))
+
+        input_types = BrowserLoadImage.INPUT_TYPES()
+        image_config = input_types["required"]["image"]
+        # 第一个元素是文件名列表
+        self.assertIn("photo.jpg", image_config[0])
+
+    def test_load_image_empty_returns_default(self):
+        import torch
+
+        image, mask = self.node.load_image("")
+        self.assertEqual(image.shape, (1, 64, 64, 3))
+        self.assertEqual(mask.shape, (1, 64, 64))
+        self.assertEqual(image.dtype, torch.float32)
+
+    def test_load_image_valid_rgb(self):
+        from PIL import Image as PILImage
+        import torch
+
+        img = PILImage.new("RGB", (100, 80), "blue")
+        img.save(os.path.join(self.temp_dir, "valid.png"))
+
+        image, mask = self.node.load_image("valid.png")
+
+        self.assertIsInstance(image, torch.Tensor)
+        self.assertIsInstance(mask, torch.Tensor)
+        self.assertEqual(image.shape, (1, 80, 100, 3))
+        self.assertEqual(mask.shape, (1, 80, 100))
+        # RGB 值范围 [0, 1]
+        self.assertTrue((image >= 0).all() and (image <= 1).all())
+
+    def test_load_image_with_alpha(self):
+        from PIL import Image as PILImage
+
+        img = PILImage.new("RGBA", (50, 50), (255, 0, 0, 128))
+        img.save(os.path.join(self.temp_dir, "alpha.png"))
+
+        image, mask = self.node.load_image("alpha.png")
+        self.assertEqual(image.shape, (1, 50, 50, 3))
+        self.assertEqual(mask.shape, (1, 50, 50))
+
+    def test_load_image_not_found_raises(self):
+        with self.assertRaises(FileNotFoundError):
+            self.node.load_image("nonexistent.png")
+
+    def test_is_changed_delegates(self):
+        from PIL import Image as PILImage
+
+        img = PILImage.new("RGB", (10, 10), "red")
+        img.save(os.path.join(self.temp_dir, "test.png"))
+
+        result = BrowserLoadImage.IS_CHANGED("test.png")
+        self.assertIsInstance(result, float)
+
+    def test_validate_inputs_delegates(self):
+        self.assertTrue(BrowserLoadImage.VALIDATE_INPUTS(""))
+        self.assertFalse(BrowserLoadImage.VALIDATE_INPUTS("no_such_file.png"))
+
+
+if __name__ == "__main__":
     unittest.main()
