@@ -1,3 +1,2 @@
 # ComfyUI Browser Load Image - Dependencies
-# Image node: no extra dependencies (uses PIL/Pillow bundled with ComfyUI)
-# Video nodes (optional): pip install opencv-python
+opencv-python>=4.5.0
