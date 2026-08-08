@@ -52,6 +52,27 @@ const BLI_STYLES = `
     color: #fff;
     background-color: rgba(255, 255, 255, 0.1);
 }
+.bli-modal-maximize {
+    position: absolute;
+    top: 8px;
+    right: 42px;
+    background: none;
+    border: none;
+    color: #999;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 0;
+    width: 30px; height: 30px;
+    line-height: 30px;
+    text-align: center;
+    border-radius: 4px;
+    z-index: 1;
+    transition: all 0.15s ease;
+}
+.bli-modal-maximize:hover {
+    color: #fff;
+    background-color: rgba(255, 255, 255, 0.1);
+}
 .bli-toolbar {
     padding: 10px 20px;
     display: flex;
@@ -389,6 +410,48 @@ function openMediaModal(_node, mediaWidget, mediaType) {
     closeBtn.textContent = "\u00d7";
     closeBtn.onclick = closeModal;
 
+    // 最大化按钮
+    const maxBtn = document.createElement("button");
+    maxBtn.className = "bli-modal-maximize";
+    maxBtn.textContent = "\u25a1"; // □
+    maxBtn.title = "最大化";
+    let isMaximized = false;
+    let restoreRect = null;
+
+    function toggleMaximize() {
+        if (isMaximized) {
+            // 恢复
+            modal.style.left = restoreRect.x + "px";
+            modal.style.top = restoreRect.y + "px";
+            modal.style.width = restoreRect.w + "px";
+            modal.style.height = restoreRect.h + "px";
+            maxBtn.textContent = "\u25a1";
+            maxBtn.title = "最大化";
+            resizeHandle.style.display = "";
+            isMaximized = false;
+        } else {
+            // 保存当前位置
+            restoreRect = {
+                x: modal.offsetLeft,
+                y: modal.offsetTop,
+                w: modal.offsetWidth,
+                h: modal.offsetHeight,
+            };
+            // 最大化（留 8px 边距）
+            const pad = 8;
+            modal.style.left = pad + "px";
+            modal.style.top = pad + "px";
+            modal.style.width = (window.innerWidth - pad * 2) + "px";
+            modal.style.height = (window.innerHeight - pad * 2) + "px";
+            maxBtn.textContent = "\u2750";
+            maxBtn.title = "还原";
+            resizeHandle.style.display = "none";
+            isMaximized = true;
+        }
+    }
+
+    maxBtn.onclick = toggleMaximize;
+
     // 工具栏
     const toolbar = document.createElement("div");
     toolbar.className = "bli-toolbar";
@@ -616,6 +679,7 @@ function openMediaModal(_node, mediaWidget, mediaType) {
     // ===== 组装 DOM =====
 
     modal.appendChild(titleBar);
+    modal.appendChild(maxBtn);
     modal.appendChild(closeBtn);
     modal.appendChild(toolbar);
     modal.appendChild(mediaGrid);
@@ -697,7 +761,8 @@ function openMediaModal(_node, mediaWidget, mediaType) {
     const MIN_W = 400, MIN_H = 300;
 
     // 拖拽：标题栏 mousedown
-    titleBar.onmousedown = (e) => {
+    titleBar.addEventListener("mousedown", (e) => {
+        if (isMaximized) return; // 最大化时禁止拖拽
         isDragging = true;
         startX = e.clientX;
         startY = e.clientY;
@@ -706,7 +771,13 @@ function openMediaModal(_node, mediaWidget, mediaType) {
         modal.classList.add("bli-interacting");
         document.body.style.userSelect = "none";
         e.preventDefault();
-    };
+    });
+
+    // 双击标题栏切换最大化
+    titleBar.addEventListener("dblclick", (e) => {
+        e.preventDefault();
+        toggleMaximize();
+    });
 
     // 缩放：手柄 mousedown
     resizeHandle.onmousedown = (e) => {
