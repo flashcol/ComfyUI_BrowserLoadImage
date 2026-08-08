@@ -5,6 +5,8 @@ Enhanced Load Image / Video nodes for [ComfyUI](https://github.com/comfyanonymou
 ![ComfyUI](https://img.shields.io/badge/ComfyUI-Custom_Node-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
+![Browser Modal Screenshot](assets/screenshot.png)
+
 ## ✨ Features
 
 - **Visual Media Browser** — Browse and select images/videos from the input folder with a thumbnail grid modal
