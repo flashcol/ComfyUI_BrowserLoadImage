@@ -763,6 +763,7 @@ function openMediaModal(_node, mediaWidget, mediaType) {
     // 拖拽：标题栏 mousedown
     titleBar.addEventListener("mousedown", (e) => {
         if (isMaximized) return; // 最大化时禁止拖拽
+        if (e.detail >= 2) return; // 双击时跳过，避免干扰 dblclick
         isDragging = true;
         startX = e.clientX;
         startY = e.clientY;
