@@ -14,7 +14,7 @@ Enhanced Load Image / Video nodes for [ComfyUI](https://github.com/comfyanonymou
 - **Configurable Preview Size** — Choose preview size from dropdown (320 / 480 / 640 / 768 / 1024)
 - **Draggable Modal** — Drag the title bar to reposition the modal
 - **Resizable Modal** — Drag the bottom-right corner to resize (min 400×300)
-- **Maximize Button** — Click □ or double-click the title bar to toggle fullscreen
+- **Maximize Button** — Click □ to toggle fullscreen
 - **Remember Layout** — Check "记住窗口" to persist your preferred window position and size
 - **Search & Filter** — Real-time search to quickly find files by name
 - **Keyboard Navigation** — Arrow keys, PageUp/Down, Home/End for scrolling; ESC to close
