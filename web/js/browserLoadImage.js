@@ -196,6 +196,41 @@ const BLI_STYLES = `
 .bli-modal.bli-interacting .bli-media-grid {
     pointer-events: none;
 }
+.bli-hover-preview {
+    position: fixed;
+    z-index: 10001;
+    background: #1a1a1a;
+    border: 1px solid #555;
+    border-radius: 8px;
+    padding: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    max-width: 496px;
+}
+.bli-hover-preview.visible {
+    opacity: 1;
+}
+.bli-hover-preview img,
+.bli-hover-preview video {
+    display: block;
+    max-width: 480px;
+    max-height: 480px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    border-radius: 4px;
+}
+.bli-hover-preview-info {
+    color: #aaa;
+    font-size: 12px;
+    text-align: center;
+    margin-top: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 `;
 
 // ===== 节点 -> 媒体类型映射 =====
@@ -332,6 +367,25 @@ function openMediaModal(_node, mediaWidget, mediaType) {
     const resizeHandle = document.createElement("div");
     resizeHandle.className = "bli-resize-handle";
 
+    // ===== 悬浮预览 =====
+
+    const hoverPreview = document.createElement("div");
+    hoverPreview.className = "bli-hover-preview";
+    document.body.appendChild(hoverPreview);
+    let previewMX = 0, previewMY = 0;
+
+    function positionPreview(mx, my) {
+        const gap = 20;
+        const pw = hoverPreview.offsetWidth || 200;
+        const ph = hoverPreview.offsetHeight || 200;
+        let x = mx + gap;
+        let y = my + gap;
+        if (x + pw > window.innerWidth - 10) x = mx - pw - gap;
+        if (y + ph > window.innerHeight - 10) y = my - ph - gap;
+        hoverPreview.style.left = Math.max(5, x) + "px";
+        hoverPreview.style.top = Math.max(5, y) + "px";
+    }
+
     // ===== 渲染媒体列表 =====
 
     const availableMedia = mediaWidget.options ? mediaWidget.options.values : [];
@@ -407,6 +461,48 @@ function openMediaModal(_node, mediaWidget, mediaType) {
                 closeModal();
             };
 
+            // 悬浮大图预览
+            item.addEventListener("mouseenter", (e) => {
+                previewMX = e.clientX;
+                previewMY = e.clientY;
+                hoverPreview.innerHTML = "";
+
+                const info = document.createElement("div");
+                info.className = "bli-hover-preview-info";
+                info.textContent = media;
+
+                if (mediaType === "video") {
+                    const vid = document.createElement("video");
+                    vid.src = url;
+                    vid.muted = true;
+                    vid.autoplay = true;
+                    vid.loop = true;
+                    hoverPreview.appendChild(vid);
+                } else {
+                    const img = document.createElement("img");
+                    img.src = url;
+                    img.onload = () => {
+                        info.textContent = media + "  \u00b7  " + img.naturalWidth + " \u00d7 " + img.naturalHeight;
+                        positionPreview(previewMX, previewMY);
+                    };
+                    hoverPreview.appendChild(img);
+                }
+
+                hoverPreview.appendChild(info);
+                positionPreview(previewMX, previewMY);
+                requestAnimationFrame(() => hoverPreview.classList.add("visible"));
+            });
+
+            item.addEventListener("mousemove", (e) => {
+                previewMX = e.clientX;
+                previewMY = e.clientY;
+                positionPreview(previewMX, previewMY);
+            });
+
+            item.addEventListener("mouseleave", () => {
+                hoverPreview.classList.remove("visible");
+            });
+
             mediaGrid.appendChild(item);
         });
 
@@ -430,6 +526,7 @@ function openMediaModal(_node, mediaWidget, mediaType) {
     // ===== 关闭逻辑 =====
 
     function closeModal() {
+        hoverPreview.remove();
         overlay.remove();
         document.removeEventListener("keydown", onKeyDown);
         document.removeEventListener("mousemove", onMouseMove);
