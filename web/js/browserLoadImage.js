@@ -52,10 +52,16 @@ const BLI_STYLES = `
     color: #fff;
     background-color: rgba(255, 255, 255, 0.1);
 }
-.bli-search-container {
+.bli-toolbar {
     padding: 10px 20px;
-    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
     flex-shrink: 0;
+}
+.bli-search-wrapper {
+    position: relative;
+    flex: 1;
 }
 .bli-search-input {
     width: 100%;
@@ -74,7 +80,7 @@ const BLI_STYLES = `
 }
 .bli-search-clear {
     position: absolute;
-    right: 28px;
+    right: 8px;
     top: 50%;
     transform: translateY(-50%);
     background: none;
@@ -89,6 +95,36 @@ const BLI_STYLES = `
     display: none;
 }
 .bli-search-clear:hover { color: #fff; }
+.bli-preview-select {
+    background: #333;
+    color: #ccc;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 7px 6px;
+    font-size: 13px;
+    cursor: pointer;
+    outline: none;
+    flex-shrink: 0;
+}
+.bli-preview-select:focus { border-color: #777; }
+.bli-remember-label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: #999;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.bli-remember-label:hover { color: #ccc; }
+.bli-remember-label input[type="checkbox"] {
+    accent-color: #777;
+    cursor: pointer;
+    margin: 0;
+}
 .bli-media-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
@@ -207,7 +243,7 @@ const BLI_STYLES = `
     pointer-events: none;
     opacity: 0;
     transition: opacity 0.15s ease;
-    max-width: 496px;
+    max-width: calc(var(--bli-preview-max, 480) * 1px + 16px);
 }
 .bli-hover-preview.visible {
     opacity: 1;
@@ -215,8 +251,8 @@ const BLI_STYLES = `
 .bli-hover-preview img,
 .bli-hover-preview video {
     display: block;
-    max-width: 480px;
-    max-height: 480px;
+    max-width: calc(var(--bli-preview-max, 480) * 1px);
+    max-height: calc(var(--bli-preview-max, 480) * 1px);
     width: auto;
     height: auto;
     object-fit: contain;
@@ -245,6 +281,19 @@ const MEDIA_WIDGET_NAME = {
     "image": "image",
     "video": "video",
 };
+
+// ===== 偏好存储 =====
+const STORAGE_KEY = "bli-modal-prefs";
+const PREVIEW_SIZES = [320, 480, 640, 768, 1024];
+const DEFAULT_PREFS = { previewSize: 480, remember: false, x: -1, y: -1, w: 800, h: 600 };
+
+function loadPrefs() {
+    try { return Object.assign({}, DEFAULT_PREFS, JSON.parse(localStorage.getItem(STORAGE_KEY))); }
+    catch { return Object.assign({}, DEFAULT_PREFS); }
+}
+function savePrefs(p) {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(p)); } catch {}
+}
 
 /**
  * 注入 CSS 样式（仅一次，通过 ID 去重）
@@ -313,14 +362,21 @@ function openMediaModal(_node, mediaWidget, mediaType) {
     overlay.id = "bli-modal-overlay";
     overlay.className = "bli-modal-overlay";
 
-    // 弹窗主体（absolute 定位，居中初始化）
+    // 弹窗主体（absolute 定位）
     const modal = document.createElement("div");
     modal.className = "bli-modal";
-    const initW = 800, initH = 600;
+    const prefs = loadPrefs();
+    const initW = prefs.remember && prefs.w > 0 ? prefs.w : 800;
+    const initH = prefs.remember && prefs.h > 0 ? prefs.h : 600;
     modal.style.width = initW + "px";
     modal.style.height = initH + "px";
-    modal.style.left = Math.max(0, (window.innerWidth - initW) / 2) + "px";
-    modal.style.top = Math.max(0, (window.innerHeight - initH) / 2) + "px";
+    if (prefs.remember && prefs.x >= 0 && prefs.y >= 0) {
+        modal.style.left = Math.min(prefs.x, window.innerWidth - 200) + "px";
+        modal.style.top = Math.min(prefs.y, window.innerHeight - 100) + "px";
+    } else {
+        modal.style.left = Math.max(0, (window.innerWidth - initW) / 2) + "px";
+        modal.style.top = Math.max(0, (window.innerHeight - initH) / 2) + "px";
+    }
 
     // 标题栏
     const titleBar = document.createElement("div");
@@ -333,9 +389,13 @@ function openMediaModal(_node, mediaWidget, mediaType) {
     closeBtn.textContent = "\u00d7";
     closeBtn.onclick = closeModal;
 
+    // 工具栏
+    const toolbar = document.createElement("div");
+    toolbar.className = "bli-toolbar";
+
     // 搜索框
-    const searchContainer = document.createElement("div");
-    searchContainer.className = "bli-search-container";
+    const searchWrapper = document.createElement("div");
+    searchWrapper.className = "bli-search-wrapper";
 
     const searchInput = document.createElement("input");
     searchInput.type = "text";
@@ -356,8 +416,51 @@ function openMediaModal(_node, mediaWidget, mediaType) {
         renderMedia();
     };
 
-    searchContainer.appendChild(searchInput);
-    searchContainer.appendChild(clearBtn);
+    searchWrapper.appendChild(searchInput);
+    searchWrapper.appendChild(clearBtn);
+    toolbar.appendChild(searchWrapper);
+
+    // 预览尺寸下拉
+    const previewSelect = document.createElement("select");
+    previewSelect.className = "bli-preview-select";
+    previewSelect.title = "悬浮预览最大尺寸";
+    PREVIEW_SIZES.forEach((size) => {
+        const opt = document.createElement("option");
+        opt.value = size;
+        opt.textContent = "预览 " + size;
+        if (size === prefs.previewSize) opt.selected = true;
+        previewSelect.appendChild(opt);
+    });
+    previewSelect.onchange = () => {
+        const p = loadPrefs();
+        p.previewSize = parseInt(previewSelect.value, 10);
+        savePrefs(p);
+        hoverPreview.style.setProperty("--bli-preview-max", previewSelect.value);
+    };
+    toolbar.appendChild(previewSelect);
+
+    // 记住窗口复选框
+    const rememberLabel = document.createElement("label");
+    rememberLabel.className = "bli-remember-label";
+    const rememberCb = document.createElement("input");
+    rememberCb.type = "checkbox";
+    rememberCb.checked = prefs.remember;
+    rememberLabel.appendChild(rememberCb);
+    rememberLabel.append("记住窗口");
+    rememberCb.onchange = () => {
+        const p = loadPrefs();
+        if (rememberCb.checked) {
+            p.remember = true;
+            p.x = modal.offsetLeft;
+            p.y = modal.offsetTop;
+            p.w = modal.offsetWidth;
+            p.h = modal.offsetHeight;
+        } else {
+            p.remember = false;
+        }
+        savePrefs(p);
+    };
+    toolbar.appendChild(rememberLabel);
 
     // 媒体网格
     const mediaGrid = document.createElement("div");
@@ -371,6 +474,7 @@ function openMediaModal(_node, mediaWidget, mediaType) {
 
     const hoverPreview = document.createElement("div");
     hoverPreview.className = "bli-hover-preview";
+    hoverPreview.style.setProperty("--bli-preview-max", String(prefs.previewSize));
     document.body.appendChild(hoverPreview);
     let previewMX = 0, previewMY = 0;
 
@@ -513,7 +617,7 @@ function openMediaModal(_node, mediaWidget, mediaType) {
 
     modal.appendChild(titleBar);
     modal.appendChild(closeBtn);
-    modal.appendChild(searchContainer);
+    modal.appendChild(toolbar);
     modal.appendChild(mediaGrid);
     modal.appendChild(resizeHandle);
     overlay.appendChild(modal);
@@ -526,6 +630,17 @@ function openMediaModal(_node, mediaWidget, mediaType) {
     // ===== 关闭逻辑 =====
 
     function closeModal() {
+        // 保存窗口布局
+        const p = loadPrefs();
+        if (rememberCb.checked) {
+            p.remember = true;
+            p.x = modal.offsetLeft;
+            p.y = modal.offsetTop;
+            p.w = modal.offsetWidth;
+            p.h = modal.offsetHeight;
+        }
+        savePrefs(p);
+
         hoverPreview.remove();
         overlay.remove();
         document.removeEventListener("keydown", onKeyDown);
