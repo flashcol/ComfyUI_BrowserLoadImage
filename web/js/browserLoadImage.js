@@ -760,16 +760,30 @@ function openMediaModal(_node, mediaWidget, mediaType) {
     let rafId = null, lastMoveX = 0, lastMoveY = 0;
     const MIN_W = 400, MIN_H = 300;
 
-    // 拖拽：标题栏 mousedown
+    // 拖拽：标题栏 mousedown — 使用移动阈值(4px)，防止双击抖动触发拖拽
     titleBar.addEventListener("mousedown", (e) => {
-        if (isMaximized) return; // 最大化时禁止拖拽
-        isDragging = true;
+        if (isMaximized) return;
+        if (e.button !== 0) return; // 只响应左键
         startX = e.clientX;
         startY = e.clientY;
         startLeft = modal.offsetLeft;
         startTop = modal.offsetTop;
-        modal.classList.add("bli-interacting");
-        document.body.style.userSelect = "none";
+        let dragStarted = false;
+
+        const onPendingMove = (me) => {
+            if (!dragStarted && (Math.abs(me.clientX - startX) > 4 || Math.abs(me.clientY - startY) > 4)) {
+                dragStarted = true;
+                isDragging = true;
+                modal.classList.add("bli-interacting");
+                document.body.style.userSelect = "none";
+            }
+        };
+        const onPendingUp = () => {
+            document.removeEventListener("mousemove", onPendingMove);
+            document.removeEventListener("mouseup", onPendingUp);
+        };
+        document.addEventListener("mousemove", onPendingMove);
+        document.addEventListener("mouseup", onPendingUp);
         e.preventDefault();
     });
 
