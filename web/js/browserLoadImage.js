@@ -114,6 +114,8 @@ const BLI_STYLES = `
     display: flex;
     flex-direction: column;
     min-height: 200px;
+    content-visibility: auto;
+    contain-intrinsic-size: 120px 200px;
 }
 .bli-media-item:hover {
     background-color: #3a3a3a;
@@ -479,6 +481,7 @@ function openMediaModal(_node, mediaWidget, mediaType) {
     let isDragging = false, isResizing = false;
     let startX = 0, startY = 0;
     let startLeft = 0, startTop = 0, startWidth = 0, startHeight = 0;
+    let rafId = null, lastMoveX = 0, lastMoveY = 0;
     const MIN_W = 400, MIN_H = 300;
 
     // 拖拽：标题栏 mousedown
@@ -506,18 +509,31 @@ function openMediaModal(_node, mediaWidget, mediaType) {
         e.stopPropagation();
     };
 
-    function onMouseMove(e) {
+    // rAF 节流：每帧最多更新一次布局
+    function applyInteraction() {
+        rafId = null;
         if (isDragging) {
-            modal.style.left = (startLeft + e.clientX - startX) + "px";
-            modal.style.top = (startTop + e.clientY - startY) + "px";
+            modal.style.left = (startLeft + lastMoveX - startX) + "px";
+            modal.style.top = (startTop + lastMoveY - startY) + "px";
         } else if (isResizing) {
-            modal.style.width = Math.max(MIN_W, startWidth + e.clientX - startX) + "px";
-            modal.style.height = Math.max(MIN_H, startHeight + e.clientY - startY) + "px";
+            modal.style.width = Math.max(MIN_W, startWidth + lastMoveX - startX) + "px";
+            modal.style.height = Math.max(MIN_H, startHeight + lastMoveY - startY) + "px";
+        }
+    }
+
+    function onMouseMove(e) {
+        if (!isDragging && !isResizing) return;
+        lastMoveX = e.clientX;
+        lastMoveY = e.clientY;
+        if (!rafId) {
+            rafId = requestAnimationFrame(applyInteraction);
         }
     }
 
     function onMouseUp() {
         if (isDragging || isResizing) {
+            if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+            applyInteraction();
             modal.classList.remove("bli-interacting");
             document.body.style.userSelect = "";
         }
