@@ -105,17 +105,21 @@ class TestUtils(unittest.TestCase):
         result = list_media_files(SUPPORTED_IMAGE_FORMATS)
         self.assertEqual(result, ["a.png", "b.png"])
 
-    def test_list_media_files_ignores_subdirs(self):
+    def test_list_media_files_includes_one_level_subdirs(self):
         from PIL import Image
 
         img = Image.new("RGB", (10, 10), "red")
         img.save(os.path.join(self.temp_dir, "top.png"))
         sub = os.path.join(self.temp_dir, "subdir")
-        os.makedirs(sub)
+        os.makedirs(os.path.join(sub, "deeper"))
         img.save(os.path.join(sub, "nested.png"))
+        img.save(os.path.join(sub, "deeper", "too_deep.png"))
+        hidden = os.path.join(self.temp_dir, ".trash")
+        os.makedirs(hidden)
+        img.save(os.path.join(hidden, "gone.png"))
 
         result = list_media_files(SUPPORTED_IMAGE_FORMATS)
-        self.assertEqual(result, ["top.png"])
+        self.assertEqual(result, ["subdir/nested.png", "top.png"])
 
     def test_resolve_media_path(self):
         path = resolve_media_path("test.png")

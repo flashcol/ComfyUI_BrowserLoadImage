@@ -15,14 +15,10 @@ SUPPORTED_IMAGE_FORMATS = {'.jpg', '.jpeg', '.png', '.bmp', '.webp', '.tiff', '.
 SUPPORTED_VIDEO_FORMATS = {'.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv', '.m4v'}
 
 
-def list_media_files(supported_formats):
-    """扫描 input 目录，返回按名称排序的匹配文件名列表。
+def iter_input_files():
+    """列出 input 根目录及其一级子文件夹下的所有文件（相对路径，正斜杠）。
 
-    Args:
-        supported_formats: 支持的文件扩展名集合，如 {'.jpg', '.png'}
-
-    Returns:
-        排序后的文件名列表
+    以 '.' 开头的目录（如 .trash）和文件会被跳过。
     """
     files = []
     if not folder_paths:
@@ -32,12 +28,32 @@ def list_media_files(supported_formats):
     if not input_dir or not os.path.exists(input_dir):
         return files
 
-    for f in os.listdir(input_dir):
-        if os.path.isfile(os.path.join(input_dir, f)):
-            ext = os.path.splitext(f)[1].lower()
-            if ext in supported_formats:
-                files.append(f)
+    for name in os.listdir(input_dir):
+        if name.startswith('.'):
+            continue
+        full = os.path.join(input_dir, name)
+        if os.path.isfile(full):
+            files.append(name)
+        elif os.path.isdir(full):
+            for sub in os.listdir(full):
+                if not sub.startswith('.') and os.path.isfile(os.path.join(full, sub)):
+                    files.append(name + "/" + sub)
+    return files
 
+
+def list_media_files(supported_formats):
+    """扫描 input 目录（含一级子文件夹），返回排序后的相对路径列表。
+
+    Args:
+        supported_formats: 支持的文件扩展名集合，如 {'.jpg', '.png'}
+
+    Returns:
+        排序后的相对路径列表，子文件夹中的文件形如 "sub/a.png"
+    """
+    files = [
+        f for f in iter_input_files()
+        if os.path.splitext(f)[1].lower() in supported_formats
+    ]
     files.sort()
     return files
 

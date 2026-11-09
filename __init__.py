@@ -29,6 +29,14 @@ try:
 except ImportError:
     pass
 
+# 文件管理 HTTP 接口（删除/移动/重命名/新建文件夹），需要 ComfyUI 的 PromptServer
+try:
+    from server import PromptServer
+    from .api.routes import register_routes
+    register_routes(PromptServer.instance.routes)
+except Exception as e:
+    print(f"[BrowserLoadImage] file management API disabled: {e}")
+
 # Web 目录设置
 WEB_DIRECTORY = "web/js"
 

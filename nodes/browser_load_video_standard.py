@@ -4,7 +4,10 @@ Browser Load Video Standard Node - 标准视频加载节点，输出 VIDEO 类�
 
 import os
 
-from .utils import resolve_media_path, is_changed, validate_input, SUPPORTED_VIDEO_FORMATS
+from .utils import (
+    resolve_media_path, is_changed, validate_input, iter_input_files,
+    SUPPORTED_VIDEO_FORMATS,
+)
 
 try:
     import folder_paths
@@ -28,12 +31,8 @@ class BrowserLoadVideoStandard:
     def INPUT_TYPES(cls):
         videos = []
         if folder_paths:
-            input_dir = folder_paths.get_input_directory()
-            if input_dir and os.path.exists(input_dir):
-                files = [
-                    f for f in os.listdir(input_dir)
-                    if os.path.isfile(os.path.join(input_dir, f))
-                ]
+            files = iter_input_files()
+            if files:
                 # 优先使用 ComfyUI 原生 MIME 类型过滤
                 if hasattr(folder_paths, 'filter_files_content_types'):
                     videos = sorted(folder_paths.filter_files_content_types(files, ["video"]))
