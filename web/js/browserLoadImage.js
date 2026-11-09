@@ -1,4 +1,5 @@
 import { app } from "../../scripts/app.js";
+import { api } from "../../scripts/api.js";
 
 // ===== CSS 样式（注入一次） =====
 const BLI_STYLES = `
@@ -288,6 +289,140 @@ const BLI_STYLES = `
     overflow: hidden;
     text-overflow: ellipsis;
 }
+.bli-tool-btn {
+    background: #333;
+    color: #ccc;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 7px 10px;
+    font-size: 13px;
+    cursor: pointer;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+.bli-tool-btn:hover { border-color: #777; color: #fff; }
+.bli-tool-btn.active { background: #4a5a78; border-color: #6d86b8; color: #fff; }
+.bli-crumb {
+    padding: 0 20px 4px;
+    color: #aaa;
+    font-size: 13px;
+    flex-shrink: 0;
+    user-select: none;
+}
+.bli-crumb-link { color: #8ab4f8; cursor: pointer; }
+.bli-crumb-link:hover { text-decoration: underline; }
+.bli-crumb-current { color: #fff; }
+.bli-crumb-hint { color: #888; }
+.bli-manage-bar {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 20px 8px;
+    flex-shrink: 0;
+}
+.bli-manage-info { color: #ccc; font-size: 13px; margin-right: auto; }
+.bli-btn {
+    background: #3a3a3a;
+    color: #ddd;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 5px 12px;
+    font-size: 13px;
+    cursor: pointer;
+}
+.bli-btn:hover:not(:disabled) { border-color: #888; color: #fff; }
+.bli-btn:disabled { opacity: 0.4; cursor: default; }
+.bli-btn-primary { background: #3d5a8a; border-color: #5b7db5; color: #fff; }
+.bli-btn-danger { background: #6b2d2d; border-color: #9a4444; color: #fff; }
+.bli-media-item { position: relative; }
+.bli-card-actions {
+    position: absolute;
+    top: 4px; right: 4px;
+    display: none;
+    gap: 4px;
+}
+.bli-media-item:hover .bli-card-actions { display: flex; }
+.bli-card-actions button {
+    width: 22px; height: 22px;
+    padding: 0;
+    line-height: 20px;
+    font-size: 12px;
+    background: rgba(0, 0, 0, 0.7);
+    color: #ddd;
+    border: 1px solid #666;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.bli-card-actions button:hover { background: #555; color: #fff; }
+.bli-card-actions .bli-act-del:hover { background: #8a3333; }
+.bli-card-check {
+    position: absolute;
+    top: 6px; left: 6px;
+    width: 16px; height: 16px;
+    border: 2px solid #999;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.5);
+    display: none;
+}
+.bli-modal.bli-manage .bli-card-check { display: block; }
+.bli-media-item.checked { border: 2px solid #6d86b8; background-color: #3a4358; }
+.bli-media-item.checked .bli-card-check { background: #6d86b8; border-color: #fff; }
+.bli-folder-icon { font-size: 64px; }
+.bli-rename-input {
+    width: 100%;
+    box-sizing: border-box;
+    background: #222;
+    color: #fff;
+    border: 1px solid #6d86b8;
+    border-radius: 3px;
+    font-size: 11px;
+    padding: 2px 4px;
+    outline: none;
+}
+.bli-toast {
+    position: absolute;
+    left: 50%; bottom: 20px;
+    transform: translateX(-50%);
+    background: #5a2a2a;
+    color: #fff;
+    border: 1px solid #9a4444;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 13px;
+    z-index: 5;
+    max-width: 80%;
+}
+.bli-dialog-layer {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.bli-dialog {
+    background: #2f2f2f;
+    border: 1px solid #555;
+    border-radius: 8px;
+    padding: 16px 20px;
+    min-width: 320px;
+    max-width: 480px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+.bli-dialog-title { color: #fff; font-size: 15px; font-weight: bold; margin-bottom: 10px; }
+.bli-dialog-msg { color: #ccc; font-size: 13px; white-space: pre-wrap; word-break: break-all; margin-bottom: 10px; }
+.bli-dialog-input, .bli-dialog-select {
+    width: 100%;
+    box-sizing: border-box;
+    background: #333;
+    color: #fff;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 7px 10px;
+    font-size: 14px;
+    outline: none;
+}
+.bli-dialog-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 `;
 
 // ===== 节点 -> 媒体类型映射 =====
@@ -306,7 +441,15 @@ const MEDIA_WIDGET_NAME = {
 // ===== 偏好存储 =====
 const STORAGE_KEY = "bli-modal-prefs";
 const PREVIEW_SIZES = [320, 480, 640, 768, 1024];
-const DEFAULT_PREFS = { previewSize: 480, remember: false, x: -1, y: -1, w: 800, h: 600 };
+const DEFAULT_PREFS = { previewSize: 480, remember: false, lastFolder: "", x: -1, y: -1, w: 800, h: 600 };
+
+// 相对路径辅助："sub/a.png" -> 文件夹 "sub" / 文件名 "a.png"
+function dirOf(rel) { const i = rel.indexOf("/"); return i < 0 ? "" : rel.slice(0, i); }
+function baseOf(rel) { return rel.slice(rel.indexOf("/") + 1); }
+function viewUrl(rel) {
+    return "/view?filename=" + encodeURIComponent(baseOf(rel))
+        + "&subfolder=" + encodeURIComponent(dirOf(rel)) + "&type=input";
+}
 
 function loadPrefs() {
     try { return Object.assign({}, DEFAULT_PREFS, JSON.parse(localStorage.getItem(STORAGE_KEY))); }
@@ -483,6 +626,20 @@ function openMediaModal(_node, mediaWidget, mediaType) {
     searchWrapper.appendChild(clearBtn);
     toolbar.appendChild(searchWrapper);
 
+    // 新建文件夹 / 管理模式开关
+    const newFolderBtn = document.createElement("button");
+    newFolderBtn.className = "bli-tool-btn";
+    newFolderBtn.textContent = "新建文件夹";
+    newFolderBtn.onclick = doNewFolder;
+    toolbar.appendChild(newFolderBtn);
+
+    const manageBtn = document.createElement("button");
+    manageBtn.className = "bli-tool-btn";
+    manageBtn.textContent = "管理";
+    manageBtn.title = "多选、批量删除/移动";
+    manageBtn.onclick = () => setManageMode(!manageMode);
+    toolbar.appendChild(manageBtn);
+
     // 预览尺寸下拉
     const previewSelect = document.createElement("select");
     previewSelect.className = "bli-preview-select";
@@ -553,32 +710,452 @@ function openMediaModal(_node, mediaWidget, mediaType) {
         hoverPreview.style.top = Math.max(5, y) + "px";
     }
 
+    // ===== 文件管理：状态与接口 =====
+
+    let files = mediaWidget.options && mediaWidget.options.values
+        ? mediaWidget.options.values.slice() : [];
+    let folders = Array.from(new Set(files.filter((m) => m.includes("/")).map((m) => dirOf(m)))).sort();
+    let currentFolder = "";
+    let manageMode = false;
+    const selected = new Set(); // "f:路径"（文件） / "d:名称"（文件夹）
+    const cardEls = new Map();
+    let activeDialog = null;
+    {
+        const curDir = mediaWidget.value ? dirOf(mediaWidget.value) : "";
+        const want = curDir || prefs.lastFolder || "";
+        if (want && folders.includes(want)) currentFolder = want;
+    }
+
+    function showToast(msg) {
+        const t = document.createElement("div");
+        t.className = "bli-toast";
+        t.textContent = msg;
+        modal.appendChild(t);
+        setTimeout(() => t.remove(), 3500);
+    }
+
+    async function bliPost(path, body) {
+        const r = await api.fetchApi(path, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+        return data;
+    }
+
+    async function refresh() {
+        try {
+            const r = await api.fetchApi("/bli/list?type=" + mediaType);
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            const data = await r.json();
+            files = data.files;
+            folders = data.folders;
+            // 同步回 widget，避免 combo 残留已删除/已移动的旧路径
+            if (mediaWidget.options) mediaWidget.options.values = files;
+        } catch (e) {
+            showToast("刷新列表失败：" + e.message);
+        }
+        if (currentFolder && !folders.includes(currentFolder)) currentFolder = "";
+        renderMedia();
+    }
+
+    function setWidgetValue(v) {
+        mediaWidget.value = v;
+        if (mediaWidget.callback) mediaWidget.callback(v);
+        if (app.graph) app.graph.setDirtyCanvas(true, true);
+    }
+
+    function showDialog({ title, message, content, okText = "确定", danger = false }) {
+        return new Promise((resolve) => {
+            const layer = document.createElement("div");
+            layer.className = "bli-dialog-layer";
+            const box = document.createElement("div");
+            box.className = "bli-dialog";
+            const h = document.createElement("div");
+            h.className = "bli-dialog-title";
+            h.textContent = title;
+            box.appendChild(h);
+            if (message) {
+                const m = document.createElement("div");
+                m.className = "bli-dialog-msg";
+                m.textContent = message;
+                box.appendChild(m);
+            }
+            if (content) box.appendChild(content);
+            const btns = document.createElement("div");
+            btns.className = "bli-dialog-btns";
+            const cancel = document.createElement("button");
+            cancel.className = "bli-btn";
+            cancel.textContent = "取消";
+            const ok = document.createElement("button");
+            ok.className = "bli-btn" + (danger ? " bli-btn-danger" : " bli-btn-primary");
+            ok.textContent = okText;
+            btns.appendChild(cancel);
+            btns.appendChild(ok);
+            box.appendChild(btns);
+            layer.appendChild(box);
+
+            const done = (v) => {
+                layer.remove();
+                activeDialog = null;
+                resolve(v);
+            };
+            activeDialog = { cancel: () => done(false) };
+            cancel.onclick = () => done(false);
+            ok.onclick = () => done(true);
+            layer.onclick = (e) => { if (e.target === layer) done(false); };
+            layer.addEventListener("keydown", (e) => {
+                e.stopPropagation();
+                if (e.key === "Escape") done(false);
+                else if (e.key === "Enter" && e.target.tagName !== "SELECT") ok.click();
+            });
+            overlay.appendChild(layer);
+            const first = box.querySelector("input, select");
+            (first || ok).focus();
+            if (first && first.select) first.select();
+        });
+    }
+
+    function parseKeys() {
+        const out = { files: [], dirs: [] };
+        selected.forEach((k) => {
+            if (k.startsWith("f:")) out.files.push(k.slice(2));
+            else out.dirs.push(k.slice(2));
+        });
+        return out;
+    }
+
+    function folderCount(name) {
+        return files.filter((f) => dirOf(f) === name).length;
+    }
+
+    function widgetAffected(paths) {
+        const cur = mediaWidget.value;
+        return !!cur && paths.some((p) => cur === p || cur.startsWith(p + "/"));
+    }
+
+    // ===== 文件管理：操作 =====
+
+    async function doDelete(fileList, dirList) {
+        const lines = [];
+        if (dirList.length) {
+            lines.push("文件夹（连同其中全部文件）：");
+            dirList.forEach((d) => lines.push("  " + d + "/  （" + folderCount(d) + " 个媒体文件）"));
+        }
+        if (fileList.length) {
+            lines.push("文件 " + fileList.length + " 个：");
+            fileList.slice(0, 6).forEach((f) => lines.push("  " + f));
+            if (fileList.length > 6) lines.push("  ……");
+        }
+        lines.push("", "将移入 input/.trash/，可手动找回。");
+        const ok = await showDialog({
+            title: "确认删除", message: lines.join("\n"), okText: "删除", danger: true,
+        });
+        if (!ok) return;
+        const paths = dirList.concat(fileList);
+        try {
+            const res = await bliPost("/bli/delete", { paths });
+            const hit = widgetAffected(res.deleted);
+            selected.clear();
+            await refresh();
+            if (hit) setWidgetValue(files[0] || "");
+            if (res.failed.length) {
+                showToast("部分删除失败：" + res.failed[0].path + "（" + res.failed[0].reason + "）");
+            }
+        } catch (e) {
+            showToast("删除失败：" + e.message);
+        }
+    }
+
+    async function doMove(fileList) {
+        if (!fileList.length) return;
+        const sel = document.createElement("select");
+        sel.className = "bli-dialog-select";
+        const targets = [""].concat(folders);
+        targets.forEach((f) => {
+            const o = document.createElement("option");
+            o.value = f;
+            o.textContent = f ? f + "/" : "（根目录）";
+            sel.appendChild(o);
+        });
+        const ok = await showDialog({
+            title: "移动 " + fileList.length + " 个文件到",
+            message: "注意：其他工作流里引用旧路径的节点将找不到文件。",
+            content: sel, okText: "移动",
+        });
+        if (!ok) return;
+        try {
+            const res = await bliPost("/bli/move", { files: fileList, folder: sel.value });
+            const cur = mediaWidget.value;
+            const hit = res.moved.find((m) => m.from === cur);
+            selected.clear();
+            if (hit) setWidgetValue(hit.to);
+            await refresh();
+            if (res.failed.length) {
+                showToast("部分移动失败：" + res.failed[0].path + "（" + res.failed[0].reason + "）");
+            }
+        } catch (e) {
+            showToast("移动失败：" + e.message);
+        }
+    }
+
+    async function doNewFolder() {
+        const input = document.createElement("input");
+        input.type = "text";
+        input.className = "bli-dialog-input";
+        input.placeholder = "文件夹名称";
+        const ok = await showDialog({ title: "新建文件夹", content: input, okText: "创建" });
+        if (!ok) return;
+        try {
+            await bliPost("/bli/mkdir", { name: input.value.trim() });
+            await refresh();
+        } catch (e) {
+            showToast("新建失败：" + e.message);
+        }
+    }
+
+    function startRename(kind, path, nameEl) {
+        const isFile = kind === "f";
+        const full = isFile ? baseOf(path) : path;
+        const dot = isFile ? full.lastIndexOf(".") : -1;
+        const stem = dot > 0 ? full.slice(0, dot) : full;
+        const ext = dot > 0 ? full.slice(dot) : "";
+        const input = document.createElement("input");
+        input.type = "text";
+        input.className = "bli-rename-input";
+        input.value = stem;
+        nameEl.replaceWith(input);
+        input.focus();
+        input.select();
+        let finished = false;
+
+        const cancel = () => {
+            if (finished) return;
+            finished = true;
+            input.replaceWith(nameEl);
+        };
+        const commit = async () => {
+            if (finished) return;
+            const newName = input.value.trim() + ext;
+            if (newName === full) { cancel(); return; }
+            finished = true;
+            try {
+                const res = await bliPost("/bli/rename", { path, name: newName });
+                const cur = mediaWidget.value;
+                if (isFile && cur === path) {
+                    setWidgetValue(res.path);
+                } else if (!isFile && cur && cur.startsWith(path + "/")) {
+                    setWidgetValue(res.path + cur.slice(path.length));
+                }
+                selected.clear();
+                await refresh();
+            } catch (e) {
+                input.replaceWith(nameEl);
+                showToast("重命名失败：" + e.message);
+            }
+        };
+        input.onkeydown = (e) => {
+            e.stopPropagation();
+            if (e.key === "Enter") commit();
+            else if (e.key === "Escape") cancel();
+        };
+        input.onblur = cancel;
+        input.onclick = (e) => e.stopPropagation();
+        input.ondblclick = (e) => e.stopPropagation();
+    }
+
+    // ===== 管理栏 / 面包屑 =====
+
+    const crumbBar = document.createElement("div");
+    crumbBar.className = "bli-crumb";
+
+    function goFolder(name) {
+        currentFolder = name;
+        const p = loadPrefs();
+        p.lastFolder = name;
+        savePrefs(p);
+        renderMedia();
+        mediaGrid.scrollTop = 0;
+    }
+
+    function renderCrumb() {
+        crumbBar.innerHTML = "";
+        const searching = !!searchInput.value.trim();
+        const root = document.createElement("span");
+        root.textContent = "全部";
+        if (currentFolder && !searching) {
+            root.className = "bli-crumb-link";
+            root.onclick = () => goFolder("");
+        }
+        crumbBar.appendChild(root);
+        if (searching) {
+            const s = document.createElement("span");
+            s.className = "bli-crumb-hint";
+            s.textContent = "  ›  搜索结果（所有文件夹）";
+            crumbBar.appendChild(s);
+        } else if (currentFolder) {
+            const sep = document.createElement("span");
+            sep.textContent = "  ›  ";
+            const cur = document.createElement("span");
+            cur.className = "bli-crumb-current";
+            cur.textContent = currentFolder;
+            crumbBar.appendChild(sep);
+            crumbBar.appendChild(cur);
+        }
+    }
+
+    const manageBar = document.createElement("div");
+    manageBar.className = "bli-manage-bar";
+    const manageInfo = document.createElement("span");
+    manageInfo.className = "bli-manage-info";
+    function mkBtn(text, onclick) {
+        const b = document.createElement("button");
+        b.className = "bli-btn";
+        b.textContent = text;
+        b.onclick = onclick;
+        return b;
+    }
+    const btnAll = mkBtn("全选", () => {
+        const view = visibleFileKeys();
+        const allOn = view.length && view.every((k) => selected.has(k));
+        view.forEach((k) => (allOn ? selected.delete(k) : selected.add(k)));
+        renderMedia();
+    });
+    const btnMove = mkBtn("移动到…", () => doMove(parseKeys().files));
+    const btnDel = mkBtn("删除所选", () => {
+        const s = parseKeys();
+        doDelete(s.files, s.dirs);
+    });
+    btnDel.classList.add("bli-btn-danger");
+    const btnClear = mkBtn("取消选择", () => { selected.clear(); renderMedia(); });
+    [manageInfo, btnAll, btnMove, btnDel, btnClear].forEach((el) => manageBar.appendChild(el));
+
+    function updateManageBar() {
+        const s = parseKeys();
+        manageInfo.textContent = "已选 " + s.files.length + " 个文件"
+            + (s.dirs.length ? "、" + s.dirs.length + " 个文件夹" : "");
+        btnMove.disabled = s.files.length === 0;
+        btnDel.disabled = selected.size === 0;
+        btnClear.disabled = selected.size === 0;
+    }
+
+    function visibleFileKeys() {
+        const term = searchInput.value.toLowerCase().trim();
+        const list = term
+            ? files.filter((m) => m.toLowerCase().includes(term))
+            : files.filter((m) => dirOf(m) === currentFolder);
+        return list.map((m) => "f:" + m);
+    }
+
+    function setManageMode(on) {
+        manageMode = on;
+        selected.clear();
+        manageBtn.classList.toggle("active", on);
+        modal.classList.toggle("bli-manage", on);
+        manageBar.style.display = on ? "flex" : "none";
+        renderMedia();
+    }
+
     // ===== 渲染媒体列表 =====
 
-    const availableMedia = mediaWidget.options ? mediaWidget.options.values : [];
+    function makeActions(kind, path, nameEl) {
+        const box = document.createElement("div");
+        box.className = "bli-card-actions";
+        const ren = document.createElement("button");
+        ren.textContent = "\u270E";
+        ren.title = "重命名";
+        ren.onclick = (e) => { e.stopPropagation(); startRename(kind, path, nameEl); };
+        const del = document.createElement("button");
+        del.textContent = "\u2715";
+        del.title = "删除（移入回收目录）";
+        del.className = "bli-act-del";
+        del.onclick = (e) => {
+            e.stopPropagation();
+            if (kind === "d") doDelete([], [path]); else doDelete([path], []);
+        };
+        box.appendChild(ren);
+        box.appendChild(del);
+        return box;
+    }
+
+    function addCheck(item, key) {
+        const cb = document.createElement("div");
+        cb.className = "bli-card-check";
+        item.appendChild(cb);
+        item.dataset.key = key;
+        cardEls.set(key, item);
+        if (selected.has(key)) item.classList.add("checked");
+    }
+
+    function toggleSelect(key, item) {
+        if (selected.has(key)) selected.delete(key); else selected.add(key);
+        item.classList.toggle("checked", selected.has(key));
+        updateManageBar();
+    }
 
     function renderMedia() {
         const term = searchInput.value.toLowerCase().trim();
         const scrollPos = mediaGrid.scrollTop;
         mediaGrid.innerHTML = "";
+        cardEls.clear();
+        hoverPreview.classList.remove("visible");
+        renderCrumb();
 
-        const filtered = term
-            ? availableMedia.filter((m) => m.toLowerCase().includes(term))
-            : availableMedia;
+        // 清理已不存在的选中项
+        selected.forEach((k) => {
+            const p = k.slice(2);
+            if (k.startsWith("f:") ? !files.includes(p) : !folders.includes(p)) selected.delete(k);
+        });
+        updateManageBar();
 
-        if (!availableMedia.length || !filtered.length) {
+        const searching = !!term;
+        const viewFiles = searching
+            ? files.filter((m) => m.toLowerCase().includes(term))
+            : files.filter((m) => dirOf(m) === currentFolder);
+        const viewFolders = !searching && !currentFolder ? folders : [];
+
+        if (!viewFiles.length && !viewFolders.length) {
             const msg = document.createElement("div");
             msg.className = "bli-empty-message";
-            msg.textContent = !availableMedia.length
-                ? (mediaType === "video" ? "没有找到视频文件" : "没有找到图片文件")
-                : "没有找到匹配的媒体";
+            msg.textContent = searching
+                ? "没有找到匹配的媒体"
+                : (files.length || folders.length)
+                    ? "这个文件夹是空的"
+                    : (mediaType === "video" ? "没有找到视频文件" : "没有找到图片文件");
             mediaGrid.appendChild(msg);
             return;
         }
 
-        filtered.forEach((media) => {
+        viewFolders.forEach((name) => {
+            const key = "d:" + name;
+            const item = document.createElement("div");
+            item.className = "bli-media-item bli-folder-item";
+            const icon = document.createElement("div");
+            icon.className = "bli-media-preview bli-folder-icon";
+            icon.textContent = "\uD83D\uDCC1";
+            const nameBox = document.createElement("div");
+            nameBox.className = "bli-filename-container";
+            const nameEl = document.createElement("div");
+            nameEl.className = "bli-filename";
+            nameEl.textContent = name + "  (" + folderCount(name) + ")";
+            nameBox.appendChild(nameEl);
+            item.appendChild(icon);
+            item.appendChild(nameBox);
+            addCheck(item, key);
+            item.appendChild(makeActions("d", name, nameEl));
+            item.onclick = () => {
+                if (manageMode) toggleSelect(key, item);
+                else goFolder(name);
+            };
+            mediaGrid.appendChild(item);
+        });
+
+        viewFiles.forEach((media) => {
             const isSelected = media === mediaWidget.value;
-            const url = "/view?filename=" + encodeURIComponent(media) + "&subfolder=&type=input";
+            const url = viewUrl(media);
+            const key = "f:" + media;
 
             const item = document.createElement("div");
             item.className = "bli-media-item" + (isSelected ? " selected" : "");
@@ -610,21 +1187,23 @@ function openMediaModal(_node, mediaWidget, mediaType) {
                 preview.appendChild(img);
             }
 
-            // 文件名
+            // 文件名（搜索结果里显示完整相对路径）
             const nameBox = document.createElement("div");
             nameBox.className = "bli-filename-container";
             const nameEl = document.createElement("div");
             nameEl.className = "bli-filename";
-            nameEl.textContent = media;
+            nameEl.textContent = searching ? media : baseOf(media);
             nameBox.appendChild(nameEl);
 
             item.appendChild(preview);
             item.appendChild(nameBox);
+            addCheck(item, key);
+            item.appendChild(makeActions("f", media, nameEl));
 
-            // 点击选择
+            // 点击：管理模式下勾选，否则选用并关闭
             item.onclick = () => {
-                mediaWidget.value = media;
-                if (mediaWidget.callback) mediaWidget.callback(media);
+                if (manageMode) { toggleSelect(key, item); return; }
+                setWidgetValue(media);
                 closeModal();
             };
 
@@ -682,6 +1261,8 @@ function openMediaModal(_node, mediaWidget, mediaType) {
     modal.appendChild(maxBtn);
     modal.appendChild(closeBtn);
     modal.appendChild(toolbar);
+    modal.appendChild(crumbBar);
+    modal.appendChild(manageBar);
     modal.appendChild(mediaGrid);
     modal.appendChild(resizeHandle);
     overlay.appendChild(modal);
@@ -689,6 +1270,7 @@ function openMediaModal(_node, mediaWidget, mediaType) {
 
     // 初始渲染 + 聚焦搜索框
     renderMedia();
+    refresh();
     setTimeout(() => searchInput.focus(), 50);
 
     // ===== 关闭逻辑 =====
@@ -719,9 +1301,30 @@ function openMediaModal(_node, mediaWidget, mediaType) {
 
     // ESC 关闭
     function onKeyDown(e) {
+        if (activeDialog) {
+            if (e.key === "Escape") activeDialog.cancel();
+            return;
+        }
         if (e.key === "Escape") {
             closeModal();
             return;
+        }
+        const tag = e.target && e.target.tagName;
+        if ((tag === "INPUT" || tag === "SELECT") && e.target !== searchInput) return;
+        if (manageMode && e.target !== searchInput && selected.size) {
+            if (e.key === "Delete") {
+                const sel = parseKeys();
+                doDelete(sel.files, sel.dirs);
+                return;
+            }
+            if (e.key === "F2" && selected.size === 1) {
+                e.preventDefault();
+                const key = Array.from(selected)[0];
+                const card = cardEls.get(key);
+                const nameEl = card && card.querySelector(".bli-filename");
+                if (nameEl) startRename(key.slice(0, 1), key.slice(2), nameEl);
+                return;
+            }
         }
         // 键盘导航（仅在搜索框未聚焦时，或使用 PageUp/Down 时）
         const scrollAmount = 200;
