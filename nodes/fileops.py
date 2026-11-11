@@ -279,7 +279,7 @@ def _tree_stats(path):
     return count, size
 
 
-def trash_list(formats):
+def _trash_list_root(formats):
     """列出回收站条目。文件按 formats 过滤，文件夹条目始终显示。
 
     Returns:
@@ -378,3 +378,119 @@ def trash_purge(names=None):
             failed.append({"path": str(name), "reason": str(e)})
     _save_index(trash, index)
     return {"purged": purged, "failed": failed}
+
+
+# ----- 回收站内的文件夹条目：查看 / 单文件还原 / 单文件彻底删除 -----
+
+def trash_list(formats, folder=None):
+    """folder 为 None 时列出回收站条目；否则列出该文件夹条目内的媒体文件。
+
+    Returns:
+        folder 为 None：_trash_list_root 的结果
+        否则：{"entries": [{"name","kind","at","size"}], "folder", "orig"}
+    """
+    if folder is None:
+        return _trash_list_root(formats)
+    full = _trash_folder_entry(folder)
+    index = _load_index(_trash_path())
+    rec = index.get(folder) if isinstance(index.get(folder), dict) else {}
+    try:
+        at = rec.get("at") or int(os.path.getmtime(full))
+    except OSError:
+        at = 0
+    entries = []
+    for n in sorted(os.listdir(full)):
+        p = os.path.join(full, n)
+        if (n.startswith(".") or not os.path.isfile(p)
+                or os.path.splitext(n)[1].lower() not in formats):
+            continue
+        entries.append({"name": n, "kind": "file", "at": at, "size": os.path.getsize(p)})
+    return {"entries": entries, "folder": folder, "orig": _orig_of(folder, index)}
+
+
+def _trash_folder_entry(folder):
+    full = _trash_entry(folder)
+    if not os.path.isdir(full):
+        raise FileOpError("not a folder entry")
+    return full
+
+
+def _orig_of(name, index):
+    rec = index.get(name) if isinstance(index.get(name), dict) else {}
+    return rec.get("orig") or _TRASH_PREFIX.sub("", name)
+
+
+def _inner_file(folder_full, fname):
+    """解析回收站文件夹条目内的单个媒体文件（只允许单层名称）。"""
+    if (not isinstance(fname, str) or not fname or fname.startswith(".")
+            or "/" in fname or "\\" in fname or ":" in fname):
+        raise FileOpError("invalid file name")
+    _check_media_ext(fname)
+    full = os.path.join(folder_full, fname)
+    if not os.path.isfile(full):
+        raise FileOpError("not found")
+    if os.path.dirname(os.path.realpath(full)) != os.path.realpath(folder_full):
+        raise FileOpError("invalid file name")
+    return full
+
+
+def _remove_if_empty(folder_full, index, name):
+    """文件夹条目被取空后移除它及其索引记录。"""
+    if not os.listdir(folder_full):
+        os.rmdir(folder_full)
+        index.pop(name, None)
+        return True
+    return False
+
+
+def trash_restore_in(folder, files):
+    """把回收站文件夹条目里的若干文件还原到原文件夹（缺失则重建，重名加后缀）。
+
+    Returns:
+        {"restored": [{"name","to"}], "failed": [...], "folder_removed": bool}
+    """
+    root = input_root()
+    trash = _trash_path()
+    full = _trash_folder_entry(folder)
+    index = _load_index(trash)
+    try:
+        target_dir, _ = safe_resolve(_orig_of(folder, index), "folder")
+    except FileOpError:  # 索引损坏/被篡改：回退到根目录下的同名文件夹
+        target_dir = os.path.join(root, _TRASH_PREFIX.sub("", folder))
+    restored, failed = [], []
+    for f in files:
+        try:
+            src = _inner_file(full, f)
+            os.makedirs(target_dir, exist_ok=True)
+            dest = _unique_path(target_dir, f)
+            shutil.move(src, dest)
+            restored.append({
+                "name": f,
+                "to": os.path.relpath(dest, root).replace("\\", "/"),
+            })
+        except (FileOpError, OSError) as e:
+            failed.append({"path": str(f), "reason": str(e)})
+    removed = _remove_if_empty(full, index, folder)
+    _save_index(trash, index)
+    return {"restored": restored, "failed": failed, "folder_removed": removed}
+
+
+def trash_purge_in(folder, files):
+    """彻底删除回收站文件夹条目里的若干文件（不可恢复）。
+
+    Returns:
+        {"purged": [...], "failed": [...], "folder_removed": bool}
+    """
+    trash = _trash_path()
+    full = _trash_folder_entry(folder)
+    index = _load_index(trash)
+    purged, failed = [], []
+    for f in files:
+        try:
+            os.remove(_inner_file(full, f))
+            purged.append(f)
+        except (FileOpError, OSError) as e:
+            failed.append({"path": str(f), "reason": str(e)})
+    removed = _remove_if_empty(full, index, folder)
+    _save_index(trash, index)
+    return {"purged": purged, "failed": failed, "folder_removed": removed}

@@ -259,5 +259,75 @@ class TestTrash(unittest.TestCase):
         self.assertEqual(r["entries"], [])
 
 
+class TestTrashFolderEntry(unittest.TestCase):
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        mock_folder_paths._input_dir = self.root
+        touch(os.path.join(self.root, "g", "a.png"))
+        touch(os.path.join(self.root, "g", "b.png"))
+        touch(os.path.join(self.root, "g", "v.mp4"))
+        fileops.delete_items(["g"])
+        (self.entry,) = fileops.trash_list(fileops.ALL_MEDIA_FORMATS)["entries"]
+        self.name = self.entry["name"]
+
+    def tearDown(self):
+        shutil.rmtree(self.root)
+        mock_folder_paths._input_dir = None
+
+    def p(self, *parts):
+        return os.path.join(self.root, *parts)
+
+    def test_list_inner_filters_by_type(self):
+        r = fileops.trash_list(fileops.SUPPORTED_IMAGE_FORMATS, self.name)
+        self.assertEqual([e["name"] for e in r["entries"]], ["a.png", "b.png"])
+        self.assertEqual(r["orig"], "g")
+
+    def test_list_inner_rejects_bad_names(self):
+        for bad in ["../x", "..", ".index.json", "a/b", "", "nope"]:
+            with self.assertRaises(FileOpError, msg=bad):
+                fileops.trash_list(fileops.ALL_MEDIA_FORMATS, bad)
+
+    def test_restore_one_file_keeps_entry(self):
+        r = fileops.trash_restore_in(self.name, ["a.png"])
+        self.assertEqual(r["restored"], [{"name": "a.png", "to": "g/a.png"}])
+        self.assertFalse(r["folder_removed"])
+        self.assertTrue(os.path.exists(self.p("g", "a.png")))
+        inner = fileops.trash_list(fileops.ALL_MEDIA_FORMATS, self.name)["entries"]
+        self.assertEqual(sorted(e["name"] for e in inner), ["b.png", "v.mp4"])
+
+    def test_restore_all_removes_empty_entry_and_index(self):
+        r = fileops.trash_restore_in(self.name, ["a.png", "b.png", "v.mp4"])
+        self.assertTrue(r["folder_removed"])
+        self.assertEqual(fileops.trash_list(fileops.ALL_MEDIA_FORMATS)["entries"], [])
+        import json
+        with open(self.p(".trash", ".index.json")) as f:
+            self.assertEqual(json.load(f), {})
+
+    def test_restore_conflict_suffix(self):
+        touch(self.p("g", "a.png"))
+        r = fileops.trash_restore_in(self.name, ["a.png"])
+        self.assertEqual(r["restored"][0]["to"], "g/a (1).png")
+
+    def test_restore_rejects_traversal(self):
+        touch(self.p("secret.png"))
+        r = fileops.trash_restore_in(self.name, ["../../secret.png", "a/b.png", ".x.png", "c.txt"])
+        self.assertEqual(r["restored"], [])
+        self.assertEqual(len(r["failed"]), 4)
+        self.assertTrue(os.path.exists(self.p("secret.png")))
+
+    def test_purge_one_and_all(self):
+        r = fileops.trash_purge_in(self.name, ["a.png"])
+        self.assertEqual(r["purged"], ["a.png"])
+        self.assertFalse(r["folder_removed"])
+        r = fileops.trash_purge_in(self.name, ["b.png", "v.mp4"])
+        self.assertTrue(r["folder_removed"])
+        self.assertEqual(fileops.trash_list(fileops.ALL_MEDIA_FORMATS)["entries"], [])
+
+    def test_purge_missing_file_fails_cleanly(self):
+        r = fileops.trash_purge_in(self.name, ["zzz.png"])
+        self.assertEqual(r["purged"], [])
+        self.assertEqual(len(r["failed"]), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

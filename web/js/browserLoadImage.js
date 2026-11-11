@@ -766,6 +766,10 @@ function openMediaModal(_node, mediaWidget, mediaType) {
         }
         if (currentFolder && !folders.includes(currentFolder)) currentFolder = "";
         await loadTrash();
+        if (trashFolder) {
+            if (trashEntries.some((e) => e.name === trashFolder)) await loadTrashInner();
+            else leaveTrashFolder();
+        }
         renderMedia();
     }
 
@@ -998,9 +1002,25 @@ function openMediaModal(_node, mediaWidget, mediaType) {
             const cur = document.createElement("span");
             cur.className = "bli-crumb-current";
             cur.textContent = "回收站";
-            const sep = document.createElement("span");
-            sep.textContent = "  \u203a  ";
-            [back, sep, cur].forEach((el) => crumbBar.appendChild(el));
+            const mkSep = () => {
+                const sp = document.createElement("span");
+                sp.textContent = "  \u203a  ";
+                return sp;
+            };
+            crumbBar.appendChild(back);
+            crumbBar.appendChild(mkSep());
+            if (trashFolder) {
+                cur.className = "bli-crumb-link";
+                cur.onclick = () => leaveTrashFolder();
+                crumbBar.appendChild(cur);
+                crumbBar.appendChild(mkSep());
+                const inner = document.createElement("span");
+                inner.className = "bli-crumb-current";
+                inner.textContent = trashFolderOrig || trashFolder;
+                crumbBar.appendChild(inner);
+            } else {
+                crumbBar.appendChild(cur);
+            }
             return;
         }
         const searching = !!searchInput.value.trim();
@@ -1084,7 +1104,10 @@ function openMediaModal(_node, mediaWidget, mediaType) {
     let trashMode = false;
     let trashEntries = [];
     let trashInfo = { count: 0, size: 0 };
-    const tSelected = new Set(); // 回收站条目名
+    const tSelected = new Set(); // 回收站条目名（进入文件夹后为其中的文件名）
+    let trashFolder = "";        // 当前查看的回收站文件夹条目名，"" 表示在回收站根
+    let trashFolderOrig = "";
+    let trashInner = [];
 
     function fmtSize(n) {
         if (n < 1024) return n + " B";
@@ -1111,6 +1134,36 @@ function openMediaModal(_node, mediaWidget, mediaType) {
         }
     }
 
+    async function loadTrashInner() {
+        try {
+            const r = await api.fetchApi("/bli/trash/list?type=" + mediaType
+                + "&folder=" + encodeURIComponent(trashFolder));
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            const data = await r.json();
+            trashInner = data.entries.map((e) => Object.assign({}, e, { orig: e.name }));
+            trashFolderOrig = data.orig || trashFolder;
+        } catch (e) {
+            showToast("读取文件夹内容失败：" + e.message);
+            trashFolder = "";
+            trashInner = [];
+        }
+    }
+
+    async function enterTrashFolder(name) {
+        trashFolder = name;
+        tSelected.clear();
+        await loadTrashInner();
+        renderMedia();
+        mediaGrid.scrollTop = 0;
+    }
+
+    function leaveTrashFolder() {
+        trashFolder = "";
+        trashInner = [];
+        tSelected.clear();
+        renderMedia();
+    }
+
     const trashBar = document.createElement("div");
     trashBar.className = "bli-manage-bar";
     trashBar.style.display = "none";
@@ -1127,19 +1180,22 @@ function openMediaModal(_node, mediaWidget, mediaType) {
     tBtnPurge.classList.add("bli-btn-danger");
     const tBtnEmpty = mkBtn("清空回收站", () => trashPurge(true));
     tBtnEmpty.classList.add("bli-btn-danger");
-    const tBtnBack = mkBtn("返回", () => setTrashMode(false));
+    const tBtnBack = mkBtn("返回", () => (trashFolder ? leaveTrashFolder() : setTrashMode(false)));
     [trashInfoEl, tBtnAll, tBtnRestore, tBtnPurge, tBtnEmpty, tBtnBack]
         .forEach((el) => trashBar.appendChild(el));
 
     function trashView() {
         const term = searchInput.value.toLowerCase().trim();
-        return trashEntries.filter((e) => !term
+        return (trashFolder ? trashInner : trashEntries).filter((e) => !term
             || e.orig.toLowerCase().includes(term) || e.name.toLowerCase().includes(term));
     }
 
     function updateTrashBar() {
-        trashInfoEl.textContent = "已选 " + tSelected.size + " 项  ·  回收站共 "
-            + trashInfo.count + " 项（" + fmtSize(trashInfo.size) + "）";
+        trashInfoEl.textContent = trashFolder
+            ? "已选 " + tSelected.size + " 项  ·  「" + trashFolderOrig + "」内共 " + trashInner.length + " 个文件"
+            : "已选 " + tSelected.size + " 项  ·  回收站共 "
+                + trashInfo.count + " 项（" + fmtSize(trashInfo.size) + "）";
+        tBtnEmpty.style.display = trashFolder ? "none" : "";
         tBtnRestore.disabled = tSelected.size === 0;
         tBtnPurge.disabled = tSelected.size === 0;
         tBtnEmpty.disabled = trashInfo.count === 0;
@@ -1149,6 +1205,8 @@ function openMediaModal(_node, mediaWidget, mediaType) {
         if (on && manageMode) setManageMode(false);
         trashMode = on;
         tSelected.clear();
+        trashFolder = "";
+        trashInner = [];
         trashBtn.classList.toggle("active", on);
         manageBtn.style.display = on ? "none" : "";
         newFolderBtn.style.display = on ? "none" : "";
@@ -1166,7 +1224,8 @@ function openMediaModal(_node, mediaWidget, mediaType) {
         const names = Array.from(tSelected);
         if (!names.length) return;
         try {
-            const res = await bliPost("/bli/trash/restore", { names });
+            const res = await bliPost("/bli/trash/restore",
+                trashFolder ? { folder: trashFolder, files: names } : { names });
             tSelected.clear();
             await refresh();
             if (res.failed.length) {
@@ -1190,7 +1249,8 @@ function openMediaModal(_node, mediaWidget, mediaType) {
         });
         if (!ok) return;
         try {
-            const res = await bliPost("/bli/trash/purge", all ? { all: true } : { names });
+            const res = await bliPost("/bli/trash/purge", all ? { all: true }
+                : trashFolder ? { folder: trashFolder, files: names } : { names });
             tSelected.clear();
             await refresh();
             if (res.failed.length) {
@@ -1238,7 +1298,7 @@ function openMediaModal(_node, mediaWidget, mediaType) {
 
     function renderTrash(term) {
         // 清理已不存在的选中项
-        const alive = new Set(trashEntries.map((e) => e.name));
+        const alive = new Set((trashFolder ? trashInner : trashEntries).map((e) => e.name));
         tSelected.forEach((n) => { if (!alive.has(n)) tSelected.delete(n); });
         const list = trashView();
         updateTrashBar();
@@ -1246,7 +1306,8 @@ function openMediaModal(_node, mediaWidget, mediaType) {
         if (!list.length) {
             const msg = document.createElement("div");
             msg.className = "bli-empty-message";
-            msg.textContent = term ? "没有找到匹配的条目" : "回收站是空的";
+            msg.textContent = term ? "没有找到匹配的条目"
+                : (trashFolder ? "这个文件夹里没有当前类型的媒体文件" : "回收站是空的");
             mediaGrid.appendChild(msg);
             return;
         }
@@ -1258,7 +1319,8 @@ function openMediaModal(_node, mediaWidget, mediaType) {
             const preview = document.createElement("div");
             preview.className = "bli-media-preview";
             const url = "/view?filename=" + encodeURIComponent(entry.name)
-                + "&subfolder=.trash&type=input";
+                + "&subfolder=" + encodeURIComponent(trashFolder ? ".trash/" + trashFolder : ".trash")
+                + "&type=input";
             if (entry.kind === "folder") {
                 preview.classList.add("bli-folder-icon");
                 preview.textContent = "\uD83D\uDCC1";
@@ -1291,6 +1353,16 @@ function openMediaModal(_node, mediaWidget, mediaType) {
             item.appendChild(preview);
             item.appendChild(nameBox);
             item.appendChild(cb);
+            if (entry.kind === "folder") {
+                const box = document.createElement("div");
+                box.className = "bli-card-actions";
+                const eye = document.createElement("button");
+                eye.textContent = "\uD83D\uDC41";
+                eye.title = "查看内容";
+                eye.onclick = (e) => { e.stopPropagation(); enterTrashFolder(entry.name); };
+                box.appendChild(eye);
+                item.appendChild(box);
+            }
             item.onclick = () => {
                 if (tSelected.has(entry.name)) tSelected.delete(entry.name);
                 else tSelected.add(entry.name);

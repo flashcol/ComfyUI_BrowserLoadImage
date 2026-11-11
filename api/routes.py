@@ -85,12 +85,14 @@ def register_routes(routes):
         formats = _FORMATS.get(request.query.get("type", "image"))
         if formats is None:
             raise fileops.FileOpError("invalid type")
-        return fileops.trash_list(formats)
+        return fileops.trash_list(formats, request.query.get("folder"))
 
     @routes.post("/bli/trash/restore")
     @_guard
     async def bli_trash_restore(request):
         data = await _json(request)
+        if data.get("folder") is not None:
+            return fileops.trash_restore_in(data["folder"], _str_list(data.get("files")))
         return fileops.trash_restore(_str_list(data.get("names")))
 
     @routes.post("/bli/trash/purge")
@@ -99,4 +101,6 @@ def register_routes(routes):
         data = await _json(request)
         if data.get("all") is True:
             return fileops.trash_purge(None)
+        if data.get("folder") is not None:
+            return fileops.trash_purge_in(data["folder"], _str_list(data.get("files")))
         return fileops.trash_purge(_str_list(data.get("names")))

@@ -74,6 +74,7 @@ All operations act on the `input/` directory and are available in the browser mo
 
 - Open it with **回收站 (N)** in the toolbar (hover to see the size it occupies). Each deletion records the original path in `input/.trash/.index.json`.
 - **Restore** — Back to the original path. A missing original folder is recreated; on a name clash a ` (n)` suffix is added. Entries without an index record are restored to the root.
+- **Inspect folders** — Click 👁 on a folder card to look inside a deleted folder. There you can restore or purge individual files; once a folder entry is emptied it disappears from the trash.
 - **Purge / Empty trash** — Irreversible, with a confirmation dialog. The trash is never cleaned automatically.
 
 ### HTTP API
