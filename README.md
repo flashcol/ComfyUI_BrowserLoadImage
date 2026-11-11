@@ -15,9 +15,12 @@ Enhanced Load Image / Video nodes for [ComfyUI](https://github.com/comfyanonymou
 - **Draggable Modal** — Drag the title bar to reposition the modal
 - **Resizable Modal** — Drag the bottom-right corner to resize (min 400×300)
 - **Maximize Button** — Click □ to toggle fullscreen
-- **Remember Layout** — Check "记住窗口" to persist your preferred window position and size
-- **Search & Filter** — Real-time search to quickly find files by name
+- **Remember Layout** — Check "记住窗口" to persist your preferred window position and size (also remembers the last folder)
+- **Search & Filter** — Real-time search to quickly find files by name (searches all folders)
 - **Keyboard Navigation** — Arrow keys, PageUp/Down, Home/End for scrolling; ESC to close
+- **Subfolders (one level)** — Group media into folders under `input/`; navigate with folder cards and a breadcrumb
+- **File Management** — Delete, move, rename and batch-select files and folders right in the modal
+- **Trash** — Deletions are recoverable: restore to the original location, or purge permanently
 
 ## 📦 Included Nodes
 
@@ -53,16 +56,42 @@ Restart ComfyUI after installation.
 
 1. Add a **Browser Load Image** node to your workflow
 2. Click the **"浏览图片"** (Browse Images) button
-3. Browse, search, and click a thumbnail to select it
-4. The selected file is set as the node's input
+3. Browse, search, and click a thumbnail to select it; click a folder card to enter it
+4. The selected file is set as the node's input (subfolder files look like `sub/a.png`)
+
+## 🗂️ File Management
+
+All operations act on the `input/` directory and are available in the browser modal.
+
+- **Subfolders** — One level only. Click a folder card to enter it, use the breadcrumb to go back. Create folders with **新建文件夹**.
+- **Delete** — Click ✕ on a card, or turn on **管理** (manage mode), multi-select, and press `Delete`. Files and whole folders are moved to `input/.trash/`, never deleted permanently.
+- **Move** — In manage mode, select files and click **移动到…**. On a name clash a ` (1)` suffix is added; nothing is overwritten.
+- **Rename** — Click ✎ on a card, or select one item in manage mode and press `F2`. A file's extension cannot be changed.
+
+> Moving or renaming changes file paths. Nodes in other saved workflows that reference the old path will not find the file.
+
+### Trash
+
+- Open it with **回收站 (N)** in the toolbar (hover to see the size it occupies). Each deletion records the original path in `input/.trash/.index.json`.
+- **Restore** — Back to the original path. A missing original folder is recreated; on a name clash a ` (n)` suffix is added. Entries without an index record are restored to the root.
+- **Purge / Empty trash** — Irreversible, with a confirmation dialog. The trash is never cleaned automatically.
+
+### HTTP API
+
+Registered on ComfyUI's server (all paths are validated to stay inside `input/`):
+`GET /bli/list`, `POST /bli/delete`, `/bli/move`, `/bli/mkdir`, `/bli/rename`,
+`GET /bli/trash/list`, `POST /bli/trash/restore`, `/bli/trash/purge`.
 
 ## 📁 Project Structure
 
 ```
 ComfyUI_BrowserLoadImage/
-├── __init__.py              # Plugin entry point
+├── __init__.py              # Plugin entry point (registers nodes and API)
+├── api/
+│   └── routes.py            # /bli/* HTTP endpoints
 ├── nodes/
-│   ├── utils.py             # Shared utilities
+│   ├── utils.py             # Shared utilities (media listing, path resolving)
+│   ├── fileops.py           # Delete / move / rename / trash operations
 │   ├── browser_load_image.py
 │   ├── browser_load_video.py
 │   └── browser_load_video_standard.py
@@ -70,7 +99,9 @@ ComfyUI_BrowserLoadImage/
 │   ├── js/browserLoadImage.js   # Frontend extension
 │   └── css/browserLoadImage.css # Stylesheet reference
 ├── config/settings.py       # Constants
-└── tests/test_nodes.py      # Unit tests
+└── tests/
+    ├── test_nodes.py        # Node and utility tests
+    └── test_fileops.py      # File management and trash tests
 ```
 
 ## 🧪 Running Tests
@@ -83,22 +114,3 @@ python -m pytest tests/ -v
 ## 📄 License
 
 [MIT License](LICENSE)
-
-
-## 文件管理（删除 / 分组 / 重命名）
-
-浏览弹窗内支持对 `input/` 目录直接管理文件：
-
-- **子文件夹分组**：仅支持一级子文件夹；点击文件夹卡片进入，顶部面包屑返回；搜索会覆盖所有文件夹。
-- **新建文件夹**：工具栏「新建文件夹」。
-- **删除**：卡片右上角 ✕，或开启「管理」后多选并按 `Delete`。文件和文件夹都会被移入 `input/.trash/`，不会永久删除，可手动找回。
-- **移动**：开启「管理」，多选文件后点「移动到…」；目标有同名文件时自动加 ` (1)` 后缀，不会覆盖。
-- **重命名**：卡片右上角 ✎，或「管理」模式下选中一项按 `F2`；文件扩展名不可修改。
-
-> 移动、重命名会改变文件路径，其他已保存的工作流中引用旧路径的节点将找不到文件。
-
-### 回收站
-
-- 工具栏「回收站 (N)」进入回收站视图（悬停可看占用大小）；删除时会在 `input/.trash/.index.json` 记录原路径。
-- **还原**：回到原路径；原文件夹已不存在会自动重建，重名时加 ` (n)` 后缀，不覆盖。索引缺失的旧条目还原到根目录。
-- **彻底删除 / 清空回收站**：不可恢复，会有确认框。不会自动清理，需手动操作。

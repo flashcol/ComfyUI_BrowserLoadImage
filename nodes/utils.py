@@ -28,16 +28,25 @@ def iter_input_files():
     if not input_dir or not os.path.exists(input_dir):
         return files
 
-    for name in os.listdir(input_dir):
-        if name.startswith('.'):
-            continue
-        full = os.path.join(input_dir, name)
-        if os.path.isfile(full):
-            files.append(name)
-        elif os.path.isdir(full):
-            for sub in os.listdir(full):
-                if not sub.startswith('.') and os.path.isfile(os.path.join(full, sub)):
-                    files.append(name + "/" + sub)
+    # os.scandir 的 DirEntry 自带类型信息，Windows 上无需对每个文件再 stat
+    try:
+        with os.scandir(input_dir) as it:
+            for entry in it:
+                name = entry.name
+                if name.startswith('.'):
+                    continue
+                if entry.is_file():
+                    files.append(name)
+                elif entry.is_dir():
+                    try:
+                        with os.scandir(entry.path) as sub_it:
+                            for sub in sub_it:
+                                if not sub.name.startswith('.') and sub.is_file():
+                                    files.append(name + "/" + sub.name)
+                    except OSError:
+                        pass
+    except OSError:
+        return []
     return files
 
 
