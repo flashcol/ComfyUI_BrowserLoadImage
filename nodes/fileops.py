@@ -264,19 +264,24 @@ def _trash_entry(name):
 
 
 def _tree_stats(path):
-    """返回 (媒体文件数, 总字节数)。"""
+    """返回 (媒体文件数, 总字节数, 图片数, 视频数)。"""
     if os.path.isfile(path):
-        return 1, os.path.getsize(path)
-    count, size = 0, 0
+        ext = os.path.splitext(path)[1].lower()
+        return (1, os.path.getsize(path),
+                int(ext in SUPPORTED_IMAGE_FORMATS), int(ext in SUPPORTED_VIDEO_FORMATS))
+    count, size, images, videos = 0, 0, 0, 0
     for dirpath, _dirs, names in os.walk(path):
         for n in names:
             try:
                 size += os.path.getsize(os.path.join(dirpath, n))
             except OSError:
                 pass
-            if os.path.splitext(n)[1].lower() in ALL_MEDIA_FORMATS:
+            ext = os.path.splitext(n)[1].lower()
+            if ext in ALL_MEDIA_FORMATS:
                 count += 1
-    return count, size
+                images += ext in SUPPORTED_IMAGE_FORMATS
+                videos += ext in SUPPORTED_VIDEO_FORMATS
+    return count, size, images, videos
 
 
 def _trash_list_root(formats):
@@ -295,7 +300,7 @@ def _trash_list_root(formats):
             continue
         full = os.path.join(trash, name)
         is_dir = os.path.isdir(full)
-        count, size = _tree_stats(full)
+        count, size, images, videos = _tree_stats(full)
         total_count += 1
         total_size += size
         if not is_dir and os.path.splitext(name)[1].lower() not in formats:
@@ -312,6 +317,8 @@ def _trash_list_root(formats):
             "at": rec.get("at") or mtime,
             "size": size,
             "count": count,
+            "images": images,
+            "videos": videos,
         })
     entries.sort(key=lambda e: e["at"], reverse=True)
     return {"entries": entries, "total_count": total_count, "total_size": total_size}

@@ -259,6 +259,32 @@ class TestTrash(unittest.TestCase):
         self.assertEqual(r["entries"], [])
 
 
+class TestTrashTypeCounts(unittest.TestCase):
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        mock_folder_paths._input_dir = self.root
+
+    def tearDown(self):
+        shutil.rmtree(self.root)
+        mock_folder_paths._input_dir = None
+
+    def test_entries_carry_image_and_video_counts(self):
+        touch(os.path.join(self.root, "a.png"))
+        touch(os.path.join(self.root, "v.mp4"))
+        touch(os.path.join(self.root, "g", "b.jpg"))
+        touch(os.path.join(self.root, "g", "c.png"))
+        touch(os.path.join(self.root, "g", "w.webm"))
+        fileops.delete_items(["a.png", "v.mp4", "g"])
+        r = fileops.trash_list(fileops.ALL_MEDIA_FORMATS)
+        self.assertEqual(r["total_count"], 3)
+        by_orig = {e["orig"]: e for e in r["entries"]}
+        self.assertEqual((by_orig["a.png"]["images"], by_orig["a.png"]["videos"]), (1, 0))
+        self.assertEqual((by_orig["v.mp4"]["images"], by_orig["v.mp4"]["videos"]), (0, 1))
+        self.assertEqual((by_orig["g"]["images"], by_orig["g"]["videos"], by_orig["g"]["count"]), (2, 1, 3))
+        # 展示条目数 == 总数，不再被类型过滤
+        self.assertEqual(len(r["entries"]), r["total_count"])
+
+
 class TestTrashFolderEntry(unittest.TestCase):
     def setUp(self):
         self.root = tempfile.mkdtemp()

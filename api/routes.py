@@ -82,10 +82,8 @@ def register_routes(routes):
     @routes.get("/bli/trash/list")
     @_guard
     async def bli_trash_list(request):
-        formats = _FORMATS.get(request.query.get("type", "image"))
-        if formats is None:
-            raise fileops.FileOpError("invalid type")
-        return fileops.trash_list(formats, request.query.get("folder"))
+        # 回收站是整个 input 目录共用的，不按节点类型过滤
+        return fileops.trash_list(fileops.ALL_MEDIA_FORMATS, request.query.get("folder"))
 
     @routes.post("/bli/trash/restore")
     @_guard
