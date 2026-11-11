@@ -58,13 +58,13 @@ class TestFileOps(unittest.TestCase):
         r = fileops.delete_items(["a.png"])
         self.assertEqual(r["deleted"], ["a.png"])
         self.assertFalse(os.path.exists(self.p("a.png")))
-        self.assertEqual(len(os.listdir(self.p(".trash"))), 1)
+        self.assertEqual(len([x for x in os.listdir(self.p(".trash")) if not x.startswith(".")]), 1)
 
     def test_delete_same_name_twice_no_overwrite(self):
         for _ in range(2):
             touch(self.p("a.png"))
             fileops.delete_items(["a.png"])
-        self.assertEqual(len(os.listdir(self.p(".trash"))), 2)
+        self.assertEqual(len([x for x in os.listdir(self.p(".trash")) if not x.startswith(".")]), 2)
 
     def test_delete_folder_with_contents(self):
         touch(self.p("g", "a.png"))
@@ -151,6 +151,112 @@ class TestFileOps(unittest.TestCase):
         os.makedirs(self.p(".trash"))
         touch(self.p("a.png"))
         self.assertEqual(fileops.list_folders(), ["g"])
+
+
+class TestTrash(unittest.TestCase):
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        mock_folder_paths._input_dir = self.root
+
+    def tearDown(self):
+        shutil.rmtree(self.root)
+        mock_folder_paths._input_dir = None
+
+    def p(self, *parts):
+        return os.path.join(self.root, *parts)
+
+    def names(self):
+        return [e["name"] for e in fileops.trash_list(fileops.ALL_MEDIA_FORMATS)["entries"]]
+
+    def test_delete_writes_index_and_restore_to_original(self):
+        touch(self.p("g", "a.png"))
+        fileops.delete_items(["g/a.png"])
+        (entry,) = fileops.trash_list(fileops.ALL_MEDIA_FORMATS)["entries"]
+        self.assertEqual(entry["orig"], "g/a.png")
+        self.assertEqual(entry["kind"], "file")
+        shutil.rmtree(self.p("g"))  # 原文件夹被删，还原时应重建
+        r = fileops.trash_restore([entry["name"]])
+        self.assertEqual(r["restored"][0]["to"], "g/a.png")
+        self.assertTrue(os.path.exists(self.p("g", "a.png")))
+        self.assertEqual(self.names(), [])
+
+    def test_restore_conflict_gets_suffix(self):
+        touch(self.p("a.png"))
+        fileops.delete_items(["a.png"])
+        touch(self.p("a.png"))
+        r = fileops.trash_restore(self.names())
+        self.assertEqual(r["restored"][0]["to"], "a (1).png")
+        self.assertTrue(os.path.exists(self.p("a.png")))
+        self.assertTrue(os.path.exists(self.p("a (1).png")))
+
+    def test_restore_folder(self):
+        touch(self.p("g", "a.png"))
+        fileops.delete_items(["g"])
+        (entry,) = fileops.trash_list(fileops.ALL_MEDIA_FORMATS)["entries"]
+        self.assertEqual((entry["kind"], entry["orig"], entry["count"]), ("folder", "g", 1))
+        fileops.trash_restore([entry["name"]])
+        self.assertTrue(os.path.exists(self.p("g", "a.png")))
+
+    def test_restore_without_index_goes_to_root(self):
+        os.makedirs(self.p(".trash"))
+        touch(self.p(".trash", "20260101-000000_old.png"))
+        r = fileops.trash_restore(["20260101-000000_old.png"])
+        self.assertEqual(r["restored"][0]["to"], "old.png")
+
+    def test_corrupt_index_is_tolerated(self):
+        touch(self.p("a.png"))
+        fileops.delete_items(["a.png"])
+        with open(self.p(".trash", ".index.json"), "w") as f:
+            f.write("{not json")
+        r = fileops.trash_restore(self.names())
+        self.assertEqual(len(r["restored"]), 1)
+        self.assertEqual(len(os.listdir(self.root)) - 1, 1)  # a.png + .trash
+
+    def test_tampered_index_cannot_escape(self):
+        touch(self.p("a.png"))
+        fileops.delete_items(["a.png"])
+        idx = self.p(".trash", ".index.json")
+        name = self.names()[0]
+        import json
+        with open(idx, "w") as f:
+            json.dump({name: {"orig": "../../evil.png", "kind": "file", "at": 1}}, f)
+        r = fileops.trash_restore([name])
+        self.assertEqual(len(r["restored"]), 1)
+        self.assertFalse(os.path.exists(os.path.join(self.root, "..", "..", "evil.png")))
+        self.assertTrue(os.path.exists(self.p("a.png")))
+
+    def test_trash_names_reject_traversal(self):
+        touch(self.p("secret.png"))
+        for bad in ["../secret.png", "..", ".index.json", "a/b", "a\\b", "", "C:x"]:
+            r = fileops.trash_restore([bad])
+            self.assertEqual(r["restored"], [], msg=bad)
+            r = fileops.trash_purge([bad])
+            self.assertEqual(r["purged"], [], msg=bad)
+        self.assertTrue(os.path.exists(self.p("secret.png")))
+
+    def test_purge_selected_and_all(self):
+        for n in ("a.png", "b.png", "c.png"):
+            touch(self.p(n))
+        fileops.delete_items(["a.png", "b.png", "c.png"])
+        first = self.names()[0]
+        self.assertEqual(fileops.trash_purge([first])["purged"], [first])
+        self.assertEqual(len(self.names()), 2)
+        fileops.trash_purge(None)
+        self.assertEqual(self.names(), [])
+        self.assertTrue(os.path.exists(self.p(".trash")))
+
+    def test_list_filters_by_type_and_totals(self):
+        touch(self.p("a.png"))
+        touch(self.p("v.mp4"))
+        fileops.delete_items(["a.png", "v.mp4"])
+        r = fileops.trash_list(fileops.SUPPORTED_IMAGE_FORMATS)
+        self.assertEqual(len(r["entries"]), 1)
+        self.assertEqual(r["total_count"], 2)
+        self.assertEqual(r["total_size"], 2)
+
+    def test_list_empty_when_no_trash(self):
+        r = fileops.trash_list(fileops.ALL_MEDIA_FORMATS)
+        self.assertEqual(r["entries"], [])
 
 
 if __name__ == "__main__":

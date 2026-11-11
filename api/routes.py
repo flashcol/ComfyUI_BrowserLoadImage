@@ -1,5 +1,6 @@
 """
 HTTP 接口：/bli/list /bli/delete /bli/move /bli/mkdir /bli/rename
+          /bli/trash/list /bli/trash/restore /bli/trash/purge
 """
 
 import os
@@ -77,3 +78,25 @@ def register_routes(routes):
     async def bli_rename(request):
         data = await _json(request)
         return {"path": fileops.rename_item(data.get("path"), data.get("name"))}
+
+    @routes.get("/bli/trash/list")
+    @_guard
+    async def bli_trash_list(request):
+        formats = _FORMATS.get(request.query.get("type", "image"))
+        if formats is None:
+            raise fileops.FileOpError("invalid type")
+        return fileops.trash_list(formats)
+
+    @routes.post("/bli/trash/restore")
+    @_guard
+    async def bli_trash_restore(request):
+        data = await _json(request)
+        return fileops.trash_restore(_str_list(data.get("names")))
+
+    @routes.post("/bli/trash/purge")
+    @_guard
+    async def bli_trash_purge(request):
+        data = await _json(request)
+        if data.get("all") is True:
+            return fileops.trash_purge(None)
+        return fileops.trash_purge(_str_list(data.get("names")))

@@ -7,6 +7,7 @@ input 目录文件操作：删除（移入 .trash）、移动、新建文件夹�
 - 以 '.' 开头的名称视为隐藏（如 .trash），不允许通过接口访问。
 """
 
+import json
 import os
 import re
 import shutil
@@ -17,6 +18,8 @@ from .utils import (
 )
 
 TRASH_DIR = ".trash"
+TRASH_INDEX = ".index.json"  # 记录回收条目的原路径，用于还原
+_TRASH_PREFIX = re.compile(r"^\d{8}-\d{6}_")
 ALL_MEDIA_FORMATS = SUPPORTED_IMAGE_FORMATS | SUPPORTED_VIDEO_FORMATS
 
 _ILLEGAL_NAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
@@ -129,6 +132,7 @@ def delete_items(paths):
     root = input_root()
     trash = os.path.join(root, TRASH_DIR)
     deleted, failed = [], []
+    index = None
     for rel in paths:
         try:
             parts = _split_rel(rel)
@@ -144,9 +148,16 @@ def delete_items(paths):
             stamp = time.strftime("%Y%m%d-%H%M%S")
             dest = _unique_path(trash, f"{stamp}_{os.path.basename(full)}")
             shutil.move(full, dest)
+            if index is None:
+                index = _load_index(trash)
+            index[os.path.basename(dest)] = {
+                "orig": norm, "kind": kind, "at": int(time.time()),
+            }
             deleted.append(norm)
         except (FileOpError, OSError) as e:
             failed.append({"path": rel, "reason": str(e)})
+    if index is not None:
+        _save_index(trash, index)
     return {"deleted": deleted, "failed": failed}
 
 
@@ -214,3 +225,156 @@ def rename_item(path, new_name):
         raise FileOpError("target already exists")
     os.rename(full, target)
     return "/".join(parts[:-1] + [new_name])
+
+
+# ===== 回收站 =====
+
+def _trash_path():
+    return os.path.join(input_root(), TRASH_DIR)
+
+
+def _load_index(trash):
+    """读取索引；缺失或损坏时返回空字典（还原时回退到根目录）。"""
+    try:
+        with open(os.path.join(trash, TRASH_INDEX), encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_index(trash, index):
+    """原子写入索引（先写临时文件再替换）。"""
+    tmp = os.path.join(trash, TRASH_INDEX + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(index, f, ensure_ascii=False)
+    os.replace(tmp, os.path.join(trash, TRASH_INDEX))
+
+
+def _trash_entry(name):
+    """把回收站条目名解析为 .trash 内的绝对路径（只允许单层名称）。"""
+    if (not isinstance(name, str) or not name or name.startswith(".")
+            or "/" in name or "\\" in name or ":" in name):
+        raise FileOpError("invalid trash entry")
+    trash = os.path.realpath(_trash_path())
+    full = os.path.realpath(os.path.join(trash, name))
+    if os.path.dirname(full) != trash:
+        raise FileOpError("invalid trash entry")
+    return full
+
+
+def _tree_stats(path):
+    """返回 (媒体文件数, 总字节数)。"""
+    if os.path.isfile(path):
+        return 1, os.path.getsize(path)
+    count, size = 0, 0
+    for dirpath, _dirs, names in os.walk(path):
+        for n in names:
+            try:
+                size += os.path.getsize(os.path.join(dirpath, n))
+            except OSError:
+                pass
+            if os.path.splitext(n)[1].lower() in ALL_MEDIA_FORMATS:
+                count += 1
+    return count, size
+
+
+def trash_list(formats):
+    """列出回收站条目。文件按 formats 过滤，文件夹条目始终显示。
+
+    Returns:
+        {"entries": [...], "total_count": n, "total_size": bytes}
+    """
+    trash = _trash_path()
+    if not os.path.isdir(trash):
+        return {"entries": [], "total_count": 0, "total_size": 0}
+    index = _load_index(trash)
+    entries, total_count, total_size = [], 0, 0
+    for name in os.listdir(trash):
+        if name.startswith("."):
+            continue
+        full = os.path.join(trash, name)
+        is_dir = os.path.isdir(full)
+        count, size = _tree_stats(full)
+        total_count += 1
+        total_size += size
+        if not is_dir and os.path.splitext(name)[1].lower() not in formats:
+            continue
+        rec = index.get(name) if isinstance(index.get(name), dict) else {}
+        try:
+            mtime = int(os.path.getmtime(full))
+        except OSError:
+            mtime = 0
+        entries.append({
+            "name": name,
+            "kind": "folder" if is_dir else "file",
+            "orig": rec.get("orig") or _TRASH_PREFIX.sub("", name),
+            "at": rec.get("at") or mtime,
+            "size": size,
+            "count": count,
+        })
+    entries.sort(key=lambda e: e["at"], reverse=True)
+    return {"entries": entries, "total_count": total_count, "total_size": total_size}
+
+
+def trash_restore(names):
+    """还原到原路径：原文件夹不存在则重建，重名时加 ' (n)' 后缀，不覆盖。
+
+    Returns:
+        {"restored": [{"name", "to"}], "failed": [{"path", "reason"}]}
+    """
+    root = input_root()
+    trash = _trash_path()
+    index = _load_index(trash)
+    restored, failed = [], []
+    for name in names:
+        try:
+            full = _trash_entry(name)
+            if not os.path.exists(full):
+                raise FileOpError("not found")
+            kind = "folder" if os.path.isdir(full) else "file"
+            rec = index.get(name) if isinstance(index.get(name), dict) else {}
+            orig = rec.get("orig") or _TRASH_PREFIX.sub("", name)
+            try:
+                target, _ = safe_resolve(orig, kind)
+            except FileOpError:  # 索引被篡改/损坏：回退到根目录
+                target = os.path.join(root, _TRASH_PREFIX.sub("", name))
+            dest_dir = os.path.dirname(target)
+            os.makedirs(dest_dir, exist_ok=True)
+            dest = _unique_path(dest_dir, os.path.basename(target))
+            shutil.move(full, dest)
+            index.pop(name, None)
+            restored.append({"name": name, "to": os.path.relpath(dest, root).replace("\\", "/")})
+        except (FileOpError, OSError) as e:
+            failed.append({"path": str(name), "reason": str(e)})
+    if os.path.isdir(trash):
+        _save_index(trash, index)
+    return {"restored": restored, "failed": failed}
+
+
+def trash_purge(names=None):
+    """彻底删除回收站条目；names 为 None 表示清空回收站。不可恢复。
+
+    Returns:
+        {"purged": [...], "failed": [{"path", "reason"}]}
+    """
+    trash = _trash_path()
+    if not os.path.isdir(trash):
+        return {"purged": [], "failed": []}
+    if names is None:
+        names = [n for n in os.listdir(trash) if not n.startswith(".")]
+    index = _load_index(trash)
+    purged, failed = [], []
+    for name in names:
+        try:
+            full = _trash_entry(name)
+            if os.path.isdir(full) and not os.path.islink(full):
+                shutil.rmtree(full)
+            elif os.path.lexists(full):
+                os.remove(full)
+            index.pop(name, None)
+            purged.append(name)
+        except (FileOpError, OSError) as e:
+            failed.append({"path": str(name), "reason": str(e)})
+    _save_index(trash, index)
+    return {"purged": purged, "failed": failed}

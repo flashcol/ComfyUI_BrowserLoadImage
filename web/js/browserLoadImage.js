@@ -368,6 +368,7 @@ const BLI_STYLES = `
 .bli-media-item.checked { border: 2px solid #6d86b8; background-color: #3a4358; }
 .bli-media-item.checked .bli-card-check { background: #6d86b8; border-color: #fff; }
 .bli-folder-icon { font-size: 64px; }
+.bli-trash-meta { color: #888; font-size: 10px; margin-top: 2px; }
 .bli-rename-input {
     width: 100%;
     box-sizing: border-box;
@@ -640,6 +641,12 @@ function openMediaModal(_node, mediaWidget, mediaType) {
     manageBtn.onclick = () => setManageMode(!manageMode);
     toolbar.appendChild(manageBtn);
 
+    const trashBtn = document.createElement("button");
+    trashBtn.className = "bli-tool-btn";
+    trashBtn.textContent = "回收站";
+    trashBtn.onclick = () => setTrashMode(!trashMode);
+    toolbar.appendChild(trashBtn);
+
     // 预览尺寸下拉
     const previewSelect = document.createElement("select");
     previewSelect.className = "bli-preview-select";
@@ -758,6 +765,7 @@ function openMediaModal(_node, mediaWidget, mediaType) {
             showToast("刷新列表失败：" + e.message);
         }
         if (currentFolder && !folders.includes(currentFolder)) currentFolder = "";
+        await loadTrash();
         renderMedia();
     }
 
@@ -982,6 +990,19 @@ function openMediaModal(_node, mediaWidget, mediaType) {
 
     function renderCrumb() {
         crumbBar.innerHTML = "";
+        if (trashMode) {
+            const back = document.createElement("span");
+            back.className = "bli-crumb-link";
+            back.textContent = "全部";
+            back.onclick = () => setTrashMode(false);
+            const cur = document.createElement("span");
+            cur.className = "bli-crumb-current";
+            cur.textContent = "回收站";
+            const sep = document.createElement("span");
+            sep.textContent = "  \u203a  ";
+            [back, sep, cur].forEach((el) => crumbBar.appendChild(el));
+            return;
+        }
         const searching = !!searchInput.value.trim();
         const root = document.createElement("span");
         root.textContent = "全部";
@@ -1053,9 +1074,232 @@ function openMediaModal(_node, mediaWidget, mediaType) {
         manageMode = on;
         selected.clear();
         manageBtn.classList.toggle("active", on);
-        modal.classList.toggle("bli-manage", on);
+        modal.classList.toggle("bli-manage", on || trashMode);
         manageBar.style.display = on ? "flex" : "none";
         renderMedia();
+    }
+
+    // ===== 回收站 =====
+
+    let trashMode = false;
+    let trashEntries = [];
+    let trashInfo = { count: 0, size: 0 };
+    const tSelected = new Set(); // 回收站条目名
+
+    function fmtSize(n) {
+        if (n < 1024) return n + " B";
+        if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+        if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + " MB";
+        return (n / 1024 / 1024 / 1024).toFixed(2) + " GB";
+    }
+
+    function updateTrashBtn() {
+        trashBtn.textContent = "回收站" + (trashInfo.count ? " (" + trashInfo.count + ")" : "");
+        trashBtn.title = "回收站共 " + trashInfo.count + " 项，占用 " + fmtSize(trashInfo.size);
+    }
+
+    async function loadTrash() {
+        try {
+            const r = await api.fetchApi("/bli/trash/list?type=" + mediaType);
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            const data = await r.json();
+            trashEntries = data.entries;
+            trashInfo = { count: data.total_count, size: data.total_size };
+            updateTrashBtn();
+        } catch (e) {
+            showToast("读取回收站失败：" + e.message);
+        }
+    }
+
+    const trashBar = document.createElement("div");
+    trashBar.className = "bli-manage-bar";
+    trashBar.style.display = "none";
+    const trashInfoEl = document.createElement("span");
+    trashInfoEl.className = "bli-manage-info";
+    const tBtnAll = mkBtn("全选", () => {
+        const view = trashView();
+        const allOn = view.length && view.every((e) => tSelected.has(e.name));
+        view.forEach((e) => (allOn ? tSelected.delete(e.name) : tSelected.add(e.name)));
+        renderMedia();
+    });
+    const tBtnRestore = mkBtn("还原", () => trashRestore());
+    const tBtnPurge = mkBtn("彻底删除", () => trashPurge(false));
+    tBtnPurge.classList.add("bli-btn-danger");
+    const tBtnEmpty = mkBtn("清空回收站", () => trashPurge(true));
+    tBtnEmpty.classList.add("bli-btn-danger");
+    const tBtnBack = mkBtn("返回", () => setTrashMode(false));
+    [trashInfoEl, tBtnAll, tBtnRestore, tBtnPurge, tBtnEmpty, tBtnBack]
+        .forEach((el) => trashBar.appendChild(el));
+
+    function trashView() {
+        const term = searchInput.value.toLowerCase().trim();
+        return trashEntries.filter((e) => !term
+            || e.orig.toLowerCase().includes(term) || e.name.toLowerCase().includes(term));
+    }
+
+    function updateTrashBar() {
+        trashInfoEl.textContent = "已选 " + tSelected.size + " 项  ·  回收站共 "
+            + trashInfo.count + " 项（" + fmtSize(trashInfo.size) + "）";
+        tBtnRestore.disabled = tSelected.size === 0;
+        tBtnPurge.disabled = tSelected.size === 0;
+        tBtnEmpty.disabled = trashInfo.count === 0;
+    }
+
+    async function setTrashMode(on) {
+        if (on && manageMode) setManageMode(false);
+        trashMode = on;
+        tSelected.clear();
+        trashBtn.classList.toggle("active", on);
+        manageBtn.style.display = on ? "none" : "";
+        newFolderBtn.style.display = on ? "none" : "";
+        modal.classList.toggle("bli-manage", on || manageMode);
+        manageBar.style.display = !on && manageMode ? "flex" : "none";
+        trashBar.style.display = on ? "flex" : "none";
+        renderMedia();
+        if (on) {
+            await loadTrash();
+            renderMedia();
+        }
+    }
+
+    async function trashRestore() {
+        const names = Array.from(tSelected);
+        if (!names.length) return;
+        try {
+            const res = await bliPost("/bli/trash/restore", { names });
+            tSelected.clear();
+            await refresh();
+            if (res.failed.length) {
+                showToast("部分还原失败：" + res.failed[0].path + "（" + res.failed[0].reason + "）");
+            }
+        } catch (e) {
+            showToast("还原失败：" + e.message);
+        }
+    }
+
+    async function trashPurge(all) {
+        const names = Array.from(tSelected);
+        if (!all && !names.length) return;
+        const ok = await showDialog({
+            title: all ? "清空回收站" : "彻底删除",
+            message: (all
+                ? "将永久删除回收站中全部 " + trashInfo.count + " 项（" + fmtSize(trashInfo.size) + "）。"
+                : "将永久删除所选 " + names.length + " 项。") + "\n此操作不可恢复。",
+            okText: all ? "清空" : "彻底删除",
+            danger: true,
+        });
+        if (!ok) return;
+        try {
+            const res = await bliPost("/bli/trash/purge", all ? { all: true } : { names });
+            tSelected.clear();
+            await refresh();
+            if (res.failed.length) {
+                showToast("部分删除失败：" + res.failed[0].path + "（" + res.failed[0].reason + "）");
+            }
+        } catch (e) {
+            showToast("删除失败：" + e.message);
+        }
+    }
+
+    function bindTrashHover(item, entry, url) {
+        item.addEventListener("mouseenter", (e) => {
+            previewMX = e.clientX;
+            previewMY = e.clientY;
+            hoverPreview.innerHTML = "";
+            const info = document.createElement("div");
+            info.className = "bli-hover-preview-info";
+            info.textContent = entry.orig;
+            let el;
+            if (mediaType === "video") {
+                el = document.createElement("video");
+                el.muted = true;
+                el.autoplay = true;
+                el.loop = true;
+            } else {
+                el = document.createElement("img");
+                el.onload = () => {
+                    info.textContent = entry.orig + "  \u00b7  " + el.naturalWidth + " \u00d7 " + el.naturalHeight;
+                    positionPreview(previewMX, previewMY);
+                };
+            }
+            el.src = url;
+            hoverPreview.appendChild(el);
+            hoverPreview.appendChild(info);
+            positionPreview(previewMX, previewMY);
+            requestAnimationFrame(() => hoverPreview.classList.add("visible"));
+        });
+        item.addEventListener("mousemove", (e) => {
+            previewMX = e.clientX;
+            previewMY = e.clientY;
+            positionPreview(previewMX, previewMY);
+        });
+        item.addEventListener("mouseleave", () => hoverPreview.classList.remove("visible"));
+    }
+
+    function renderTrash(term) {
+        // 清理已不存在的选中项
+        const alive = new Set(trashEntries.map((e) => e.name));
+        tSelected.forEach((n) => { if (!alive.has(n)) tSelected.delete(n); });
+        const list = trashView();
+        updateTrashBar();
+
+        if (!list.length) {
+            const msg = document.createElement("div");
+            msg.className = "bli-empty-message";
+            msg.textContent = term ? "没有找到匹配的条目" : "回收站是空的";
+            mediaGrid.appendChild(msg);
+            return;
+        }
+
+        list.forEach((entry) => {
+            const item = document.createElement("div");
+            item.className = "bli-media-item" + (tSelected.has(entry.name) ? " checked" : "");
+
+            const preview = document.createElement("div");
+            preview.className = "bli-media-preview";
+            const url = "/view?filename=" + encodeURIComponent(entry.name)
+                + "&subfolder=.trash&type=input";
+            if (entry.kind === "folder") {
+                preview.classList.add("bli-folder-icon");
+                preview.textContent = "\uD83D\uDCC1";
+            } else if (mediaType === "video") {
+                const vid = document.createElement("video");
+                vid.src = url;
+                vid.muted = true;
+                preview.appendChild(vid);
+            } else {
+                const img = document.createElement("img");
+                img.src = url;
+                preview.appendChild(img);
+            }
+
+            const nameBox = document.createElement("div");
+            nameBox.className = "bli-filename-container";
+            const nameEl = document.createElement("div");
+            nameEl.className = "bli-filename";
+            nameEl.textContent = entry.kind === "folder"
+                ? entry.orig + "/  (" + entry.count + ")" : entry.orig;
+            const meta = document.createElement("div");
+            meta.className = "bli-trash-meta";
+            meta.textContent = new Date(entry.at * 1000).toLocaleString() + "  ·  " + fmtSize(entry.size);
+            nameBox.appendChild(nameEl);
+            nameBox.appendChild(meta);
+
+            const cb = document.createElement("div");
+            cb.className = "bli-card-check";
+
+            item.appendChild(preview);
+            item.appendChild(nameBox);
+            item.appendChild(cb);
+            item.onclick = () => {
+                if (tSelected.has(entry.name)) tSelected.delete(entry.name);
+                else tSelected.add(entry.name);
+                item.classList.toggle("checked", tSelected.has(entry.name));
+                updateTrashBar();
+            };
+            if (entry.kind === "file") bindTrashHover(item, entry, url);
+            mediaGrid.appendChild(item);
+        });
     }
 
     // ===== 渲染媒体列表 =====
@@ -1102,6 +1346,7 @@ function openMediaModal(_node, mediaWidget, mediaType) {
         cardEls.clear();
         hoverPreview.classList.remove("visible");
         renderCrumb();
+        if (trashMode) { renderTrash(term); return; }
 
         // 清理已不存在的选中项
         selected.forEach((k) => {
@@ -1263,6 +1508,7 @@ function openMediaModal(_node, mediaWidget, mediaType) {
     modal.appendChild(toolbar);
     modal.appendChild(crumbBar);
     modal.appendChild(manageBar);
+    modal.appendChild(trashBar);
     modal.appendChild(mediaGrid);
     modal.appendChild(resizeHandle);
     overlay.appendChild(modal);
